@@ -21,6 +21,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Download official Gradle 8.4 Wrapper JAR
+        run: |
+          mkdir -p gradle/wrapper
+          curl -Lo gradle/wrapper/gradle-wrapper.jar https://repo.maven.apache.org/maven2/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
