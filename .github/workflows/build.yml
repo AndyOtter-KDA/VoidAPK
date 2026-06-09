@@ -15,20 +15,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean corrupt Gradle Wrapper JAR
-        run: rm -f gradle/wrapper/gradle-wrapper.jar
-
-      - name: Download Secure Official Gradle 8.4 Wrapper JAR
-        run: |
-          mkdir -p gradle/wrapper
-          curl -Lo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar
-
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: 'gradle'
+
+      - name: Clean potentially corrupt Gradle Wrapper
+        run: rm -rf gradle/wrapper gradlew gradlew.bat
+
+      - name: Generate Clean Secure Gradle 8.4 Wrapper
+        run: gradle wrapper --gradle-version 8.4 --no-daemon
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
