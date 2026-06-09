@@ -1,0 +1,210 @@
+package com.voidchat.app.ui.screens
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.voidchat.app.ui.theme.*
+import com.voidchat.app.viewmodel.OnboardingState
+import com.voidchat.app.viewmodel.OnboardingViewModel
+
+@Composable
+fun OnboardingScreen(
+    viewModel: OnboardingViewModel,
+    onNavigateToRecovery: (displayId: String, List<String>) -> Unit,
+    onNavigateToHome: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val state by viewModel.state.collectAsState()
+    var restoreInput by remember { mutableStateOf("") }
+    var restoreFlow by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state) {
+        if (state is OnboardingState.Created) {
+            val s = state as OnboardingState.Created
+            onNavigateToRecovery(s.displayId, s.phrase)
+        } else if (state is OnboardingState.Restored) {
+            onNavigateToHome()
+        }
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = VoidBlack
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            ScanlineOverlay()
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Cyberpunk Logo
+                Text(
+                    text = "[ VOID ]",
+                    color = NeonCyan,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 4.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "EPHEMERAL QUANTUM TRANSMISSIONS",
+                    color = TextSecondary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 2.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(48.dp))
+
+                if (!restoreFlow) {
+                    Text(
+                        text = "Initialize an independent cryptographic identity kernel. No email, no telephone, no phone book correlation. Only local client E2E tunnels.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(48.dp))
+
+                    Button(
+                        onClick = { viewModel.createIdentity() },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "CREATE NEW INDEPENDENT IDENTITY",
+                            color = VoidBlack,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = { restoreFlow = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                        border = BorderStroke(1.dp, BorderDark),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "RESTORE IDENTITY FROM BACKUP",
+                            color = TextPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    // Restore Phrase Form
+                    Text(
+                        text = "RESTORE TERMINAL NODE",
+                        color = HotPinkLight,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 1.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = restoreInput,
+                        onValueChange = { restoreInput = it },
+                        label = { Text("ENTER 12 RECOVERY WORDS", fontFamily = FontFamily.Monospace) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = HotPink,
+                            unfocusedBorderColor = BorderDark,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = { viewModel.restoreFromPhrase(restoreInput) },
+                        colors = ButtonDefaults.buttonColors(containerColor = HotPink),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "EXECUTE DECRYPTON HANDSHAKE",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = { restoreFlow = false }
+                    ) {
+                        Text(
+                            text = "<- ABORT OPERATION",
+                            color = TextMuted,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                // States indicators
+                when (state) {
+                    is OnboardingState.Creating -> {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        CircularProgressIndicator(color = NeonCyan)
+                    }
+                    is OnboardingState.Restoring -> {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        CircularProgressIndicator(color = HotPink)
+                    }
+                    is OnboardingState.Error -> {
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = (state as OnboardingState.Error).message,
+                            color = ErrorRed,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    else -> {}
+                }
+            }
+        }
+    }
+}

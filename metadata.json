@@ -1,0 +1,6 @@
+{
+  "name": "Void",
+  "description": "Send. It vanishes. Complete, production-ready E2E encrypted messaging app with self-destructing messages and notes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

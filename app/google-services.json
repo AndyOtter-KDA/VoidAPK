@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "383663567578",
+    "project_id": "void-chat-app-3e117",
+    "storage_bucket": "void-chat-app-3e117.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:383663567578:android:b8cd22639acee9786eabe3",
+        "android_client_info": {
+          "package_name": "com.voidchat.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhMg-W6Kk318Hy3IGxkxrwZNGPwbbbZ-k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
