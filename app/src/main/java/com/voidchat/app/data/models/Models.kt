@@ -133,7 +133,8 @@ data class AppSettings(
     val soundEnabled: Boolean,
     val defaultSelfDestruct: Int,
     val biometricLock: Boolean,
-    val theme: String
+    val theme: String,
+    val pinCode: String? = null
 )
 
 data class BackupPayload(

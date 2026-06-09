@@ -3,7 +3,9 @@ package com.voidchat.app.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -29,6 +31,7 @@ fun TransferOutScreen(
 ) {
     var ticksRemaining by remember { mutableStateOf(30) }
     var qrContentHash by remember { mutableStateOf(System.currentTimeMillis().hashCode().toString()) }
+    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -78,6 +81,7 @@ fun TransferOutScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(scrollState)
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center

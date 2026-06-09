@@ -6,7 +6,9 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
@@ -38,6 +40,7 @@ fun CreateNoteScreen(
 
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -81,6 +84,7 @@ fun CreateNoteScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(scrollState)
                     .padding(24.dp)
             ) {
                 if (state is NoteUiState.Created) {
@@ -176,7 +180,7 @@ fun CreateNoteScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .heightIn(min = 140.dp, max = 240.dp)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

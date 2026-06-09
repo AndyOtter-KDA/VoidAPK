@@ -217,6 +217,7 @@ fun NavGraph(
 
         composable(Routes.SETTINGS) {
             val vm: SettingsViewModel = viewModel()
+            val chatVm: ChatViewModel = viewModel()
             SettingsScreen(
                 viewModel = vm,
                 onNavigateBack = { navController.popBackStack() },
@@ -227,6 +228,11 @@ fun NavGraph(
                 onLogOut = {
                     navController.navigate(Routes.ONBOARDING) {
                         popUpTo(0) { inclusive = true }
+                    }
+                },
+                onContactSupport = {
+                    chatVm.startSupportChat { chatId ->
+                        navController.navigate("${Routes.CHAT}/$chatId")
                     }
                 }
             )

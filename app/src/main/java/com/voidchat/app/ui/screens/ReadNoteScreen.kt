@@ -3,7 +3,9 @@ package com.voidchat.app.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Warning
@@ -32,6 +34,7 @@ fun ReadNoteScreen(
     var revealed by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
+    val scrollState = rememberScrollState()
 
     DisposableEffect(Unit) {
         onDispose {
@@ -75,6 +78,7 @@ fun ReadNoteScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(scrollState)
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
@@ -94,7 +98,7 @@ fun ReadNoteScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .heightIn(min = 180.dp, max = 320.dp)
                     ) {
                         Box(
                             modifier = Modifier

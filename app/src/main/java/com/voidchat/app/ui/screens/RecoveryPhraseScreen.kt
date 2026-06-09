@@ -6,9 +6,9 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +37,7 @@ fun RecoveryPhraseScreen(
     var usernameInput by remember { mutableStateOf("") }
     var writeDownChecked by remember { mutableStateOf(false) }
     var proceedToUsername by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     LaunchedEffect(state) {
         if (state is OnboardingState.Restored) {
@@ -58,6 +59,7 @@ fun RecoveryPhraseScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(scrollState)
                     .padding(24.dp)
             ) {
                 if (!proceedToUsername) {
@@ -83,39 +85,48 @@ fun RecoveryPhraseScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // 2x6 grid for 12 words
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                    Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        items(phrase.size) { index ->
-                            Surface(
-                                color = VoidDarkNavy,
-                                shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, BorderDark),
-                                modifier = Modifier.height(44.dp)
+                        phrase.chunked(2).forEachIndexed { rowIndex, pair ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 12.dp)
-                                ) {
-                                    Text(
-                                        text = "${index + 1}.",
-                                        color = TextMuted,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = phrase[index],
-                                        color = TextPrimary,
-                                        fontSize = 13.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+                                pair.forEachIndexed { colIndex, word ->
+                                    val index = rowIndex * 2 + colIndex
+                                    Surface(
+                                        color = VoidDarkNavy,
+                                        shape = RoundedCornerShape(6.dp),
+                                        border = BorderStroke(1.dp, BorderDark),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 12.dp)
+                                        ) {
+                                            Text(
+                                                text = "${index + 1}.",
+                                                color = TextMuted,
+                                                fontSize = 11.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = word,
+                                                color = TextPrimary,
+                                                fontSize = 13.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                                if (pair.size < 2) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }

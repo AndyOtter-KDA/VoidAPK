@@ -248,8 +248,9 @@ fun ChatRowItem(
                             modifier = Modifier.size(10.dp)
                         ) {}
                         Spacer(modifier = Modifier.width(8.dp))
+                        val isSupport = otherParty == "VOID-SUPP-CHAT-LINE" || otherParty.contains("VOID-SUPP") || otherParty.contains("support") || otherParty.contains("SUPP")
                         Text(
-                            text = "NODE-${otherParty.replace("-", "").take(6).uppercase()}",
+                            text = if (isSupport) "Void Support" else "NODE-${otherParty.replace("-", "").take(6).uppercase()}",
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,

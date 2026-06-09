@@ -24,7 +24,7 @@ suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation 
 }
 
 object FirestoreManager {
-    private const val TAG = "Void"
+    private const val TAG = "VoidFirestore"
 
     // Default configuration values when Firestore has not yet been populated
     private val defaultConfigs = mapOf(
@@ -130,6 +130,11 @@ object FirestoreManager {
     }
 
     suspend fun sendMessage(chatId: String, message: Message) {
+        val isSupport = chatId.contains("SUPP") || chatId.contains("support") || chatId.contains("VOID-SUPP-CHAT-LINE")
+        if (isSupport) {
+            sendSupportMessage(chatId, message)
+            return
+        }
         Log.d(TAG, "sendMessage: Sending message for chatId: $chatId, messageId: ${message.messageId}")
         val db = FirebaseFirestore.getInstance()
         val msgData = hashMapOf(
@@ -159,9 +164,15 @@ object FirestoreManager {
     fun getMessages(chatId: String): Flow<List<Message>> = callbackFlow {
         Log.d(TAG, "getMessages: Subscribing to messages for chatId: $chatId")
         val db = FirebaseFirestore.getInstance()
-        val listener = db.collection("messages")
-            .whereEqualTo("chatId", chatId)
-            .addSnapshotListener { snapshot, error ->
+        val isSupport = chatId.contains("SUPP") || chatId.contains("support") || chatId.contains("VOID-SUPP-CHAT-LINE")
+        
+        val query = if (isSupport) {
+            db.collection("chats").document(chatId).collection("messages")
+        } else {
+            db.collection("messages").whereEqualTo("chatId", chatId)
+        }
+        
+        val listener = query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "getMessages: Snapshot listener error for chatId $chatId: ${error.message}", error)
                     close(error)
@@ -202,8 +213,14 @@ object FirestoreManager {
     suspend fun markMessageRead(chatId: String, messageId: String) {
         Log.d(TAG, "markMessageRead: Requesting read update for messageId: $messageId in chatId: $chatId")
         val db = FirebaseFirestore.getInstance()
+        val isSupport = chatId.contains("SUPP") || chatId.contains("support") || chatId.contains("VOID-SUPP-CHAT-LINE")
+        val docRef = if (isSupport) {
+            db.collection("chats").document(chatId).collection("messages").document(messageId)
+        } else {
+            db.collection("messages").document(messageId)
+        }
         try {
-            db.collection("messages").document(messageId).update(
+            docRef.update(
                 "isRead", true,
                 "readAt", System.currentTimeMillis()
             ).await()
@@ -216,8 +233,14 @@ object FirestoreManager {
     suspend fun destroyMessage(chatId: String, messageId: String) {
         Log.d(TAG, "destroyMessage: Ephemeral trigger: marking message $messageId as destroyed in chatId $chatId")
         val db = FirebaseFirestore.getInstance()
+        val isSupport = chatId.contains("SUPP") || chatId.contains("support") || chatId.contains("VOID-SUPP-CHAT-LINE")
+        val docRef = if (isSupport) {
+            db.collection("chats").document(chatId).collection("messages").document(messageId)
+        } else {
+            db.collection("messages").document(messageId)
+        }
         try {
-            db.collection("messages").document(messageId).update("destroyed", true).await()
+            docRef.update("destroyed", true).await()
             Log.d(TAG, "destroyMessage: Successfully set destroyed = true on $messageId")
         } catch (e: Exception) {
             Log.e(TAG, "destroyMessage: Failed to destroy message $messageId: ${e.message}", e)
@@ -594,13 +617,74 @@ object FirestoreManager {
     }
 
     suspend fun deleteNote(noteId: String) {
-        Log.d(TAG, "deleteNote: Deleting noteId: $noteId (marking destroyed=true)")
+        Log.d(TAG, "deleteNote: Deating noteId: $noteId (marking destroyed=true)")
         val db = FirebaseFirestore.getInstance()
         try {
             db.collection("notes").document(noteId).update("destroyed", true).await()
             Log.d(TAG, "deleteNote: Successfully marked destroyed=true on note $noteId")
         } catch (e: Exception) {
             Log.e(TAG, "deleteNote: Exception deleting note $noteId: ${e.message}", e)
+        }
+    }
+
+    suspend fun createSupportChat(userDisplayId: String, supportDisplayId: String): String {
+        Log.d(TAG, "createSupportChat: Initiating support ticket tunnel between userDisplayId=$userDisplayId and supportDisplayId=$supportDisplayId")
+        val db = FirebaseFirestore.getInstance()
+        val username = getUsernameByDisplayId(userDisplayId) ?: "void_operative"
+        
+        // Generate a standard deterministic chatId for this user <> support pairing.
+        val chatId = if (userDisplayId < supportDisplayId) "${userDisplayId}_${supportDisplayId}" else "${supportDisplayId}_${userDisplayId}"
+        
+        val chatData = hashMapOf(
+            "chatId" to chatId,
+            "participantA" to userDisplayId,
+            "participantB" to supportDisplayId,
+            "participantA_username" to username,
+            "participantB_username" to "Void Support",
+            "publicKeyA" to "MOCK_KEY_A",
+            "publicKeyB" to "MOCK_KEY_B",
+            "keyExchangeComplete" to false,
+            "createdAt" to System.currentTimeMillis(),
+            "lastMessageAt" to System.currentTimeMillis(),
+            "backgroundTheme" to "DEFAULT"
+        )
+        
+        try {
+            db.collection("chats").document(chatId).set(chatData, SetOptions.merge()).await()
+            Log.d(TAG, "createSupportChat: Successfully created/merged support chat: $chatId")
+        } catch (e: Exception) {
+            Log.e(TAG, "createSupportChat: Failed to record support chat document: ${e.message}", e)
+        }
+        return chatId
+    }
+
+    suspend fun sendSupportMessage(chatId: String, message: Message) {
+        Log.d(TAG, "sendSupportMessage: Sending message for chatId: $chatId, messageId: ${message.messageId}")
+        val db = FirebaseFirestore.getInstance()
+        val msgData = hashMapOf(
+            "messageId" to message.messageId,
+            "chatId" to message.chatId,
+            "senderId" to message.senderId,
+            "encryptedPayload" to message.encryptedPayload,
+            "iv" to message.iv,
+            "timestamp" to message.timestamp,
+            "selfDestructSeconds" to message.selfDestructSeconds,
+            "destroyed" to message.destroyed,
+            "readAt" to message.readAt,
+            "isRead" to message.isRead
+        )
+        try {
+            // Write to chats/{chatId}/messages/{messageId} subcollection
+            db.collection("chats").document(chatId)
+                .collection("messages").document(message.messageId)
+                .set(msgData, SetOptions.merge()).await()
+            Log.d(TAG, "sendSupportMessage: Successfully wrote message to subcollection: ${message.messageId}")
+            
+            // Touch/update last message timestamp in chats
+            db.collection("chats").document(chatId).update("lastMessageAt", message.timestamp).await()
+            Log.d(TAG, "sendSupportMessage: Updated lastMessageAt for chatId: $chatId to ${message.timestamp}")
+        } catch (e: Exception) {
+            Log.e(TAG, "sendSupportMessage: Failed to send support message in chat $chatId: ${e.message}", e)
         }
     }
 

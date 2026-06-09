@@ -3,7 +3,9 @@ package com.voidchat.app.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -30,6 +32,7 @@ fun CreateGroupScreen(
     var expandedDropdown by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -67,6 +70,7 @@ fun CreateGroupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(scrollState)
                     .padding(24.dp)
             ) {
                 Text(
@@ -143,9 +147,9 @@ fun CreateGroupScreen(
                             Toast.makeText(context, "Segment name required", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        // Simulate remote group creation & join E2E channel
-                        val syntheticGroupId = "grp_${java.util.UUID.randomUUID().toString().take(6)}"
-                        onNavigateToGroupChat(syntheticGroupId)
+                        viewModel.createGroup(name, selectedDurSeconds) { realGroupId ->
+                            onNavigateToGroupChat(realGroupId)
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                     shape = RoundedCornerShape(8.dp),

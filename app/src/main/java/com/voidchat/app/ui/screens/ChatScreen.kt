@@ -51,8 +51,9 @@ fun ChatScreen(
                 TopAppBar(
                     title = {
                         Column {
+                            val isSupport = chatId == "VOID-SUPP-CHAT-LINE" || chatId.contains("VOID-SUPP") || chatId.contains("support") || chatId.contains("SUPP")
                             Text(
-                                text = "NODE-${chatId.replace("-", "").take(6).uppercase()}",
+                                text = if (isSupport) "Void Support" else "NODE-${chatId.replace("-", "").take(6).uppercase()}",
                                 color = TextPrimary,
                                 fontSize = 15.sp,
                                 fontFamily = FontFamily.Monospace,

@@ -137,4 +137,31 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
             currentGroupId = ""
         }
     }
+
+    fun createGroup(name: String, defaultSelfDestructSeconds: Int, onComplete: (String) -> Unit) {
+        val groupId = "grp_${UUID.randomUUID().toString().take(6)}"
+        viewModelScope.launch {
+            val group = GroupChat(
+                groupId = groupId,
+                name = name,
+                createdBy = myDisplayId,
+                createdAt = System.currentTimeMillis(),
+                members = myDisplayId,
+                currentGroupKeyGeneration = 1,
+                defaultSelfDestructSeconds = defaultSelfDestructSeconds
+            )
+            FirestoreManager.createGroup(group)
+            
+            // Also add self as member
+            val grpMember = GroupMember(
+                displayId = myDisplayId,
+                publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                role = "ADMIN",
+                joinedAt = System.currentTimeMillis()
+            )
+            FirestoreManager.joinGroup(groupId, grpMember)
+            
+            onComplete(groupId)
+        }
+    }
 }

@@ -4,9 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.voidchat.app.crypto.CryptoManager
+import com.voidchat.app.crypto.IdentityManager
 import com.voidchat.app.crypto.KeyExchangeManager
 import com.voidchat.app.data.local.AppDatabase
 import com.voidchat.app.data.models.Message
+import com.voidchat.app.data.models.Contact
 import com.voidchat.app.data.remote.FirestoreManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -126,5 +128,32 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         
         // Refresh local cache of messages from DB
         db.messageDao().deleteExpiredMessages()
+    }
+
+    fun startSupportChat(onComplete: (String) -> Unit) {
+        viewModelScope.launch {
+            val userDisplayId = IdentityManager.getDisplayId() ?: "UNKNOWN-USER"
+            val config = FirestoreManager.fetchConfig()
+            val supportDisplayId = config["support_display_id"] ?: "VOID-SUPP-CHAT-LINE"
+            
+            // Register "Void Support" in local contacts so they display nicely with the proper name
+            try {
+                db.contactDao().insertContact(
+                    Contact(
+                        displayId = supportDisplayId,
+                        nickname = "Void Support",
+                        publicKeyBase64 = "MOCK_SUPPORT_PUBLIC_KEY",
+                        lastSeen = System.currentTimeMillis(),
+                        isFavorite = true
+                    )
+                )
+                android.util.Log.d("VoidFirestore", "startSupportChat: Successfully registered Void Support as local contact.")
+            } catch (e: Exception) {
+                android.util.Log.e("VoidFirestore", "startSupportChat: Error inserting local support contact: ${e.message}", e)
+            }
+            
+            val chatId = FirestoreManager.createSupportChat(userDisplayId, supportDisplayId)
+            onComplete(chatId)
+        }
     }
 }

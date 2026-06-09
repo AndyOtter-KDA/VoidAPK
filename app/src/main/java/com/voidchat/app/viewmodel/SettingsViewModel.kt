@@ -20,7 +20,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             soundEnabled = prefs.soundEnabled,
             defaultSelfDestruct = prefs.defaultSelfDestruct,
             biometricLock = prefs.biometricLock,
-            theme = prefs.theme
+            theme = prefs.theme,
+            pinCode = prefs.pinCode
         )
     )
     val settings = _settings.asStateFlow()
@@ -28,10 +29,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _displayId = MutableStateFlow("")
     val displayId = _displayId.asStateFlow()
 
+    private val _username = MutableStateFlow("")
+    val username = _username.asStateFlow()
+
     init {
         viewModelScope.launch {
             val identity = db.identityDao().getIdentity()
             _displayId.value = identity?.displayId ?: "VOID-NODE-NULL"
+            _username.value = identity?.username ?: prefs.username ?: "void_operative"
         }
     }
 
@@ -51,6 +56,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 currentIdentity?.let {
                     db.identityDao().insertIdentity(it.copy(username = trimmed))
                 }
+                _username.value = trimmed
                 onComplete(true)
             } else {
                 onComplete(false)
@@ -63,6 +69,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefs.defaultSelfDestruct = newSettings.defaultSelfDestruct
         prefs.biometricLock = newSettings.biometricLock
         prefs.theme = newSettings.theme
+        prefs.pinCode = newSettings.pinCode
         _settings.value = newSettings
     }
 
@@ -71,7 +78,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun getAppVersion(): String {
-        return "v2.4.9-TERMINAL"
+        return "v0.0.9-TERMINAL"
     }
 
     fun checkForUpdate(): Boolean {

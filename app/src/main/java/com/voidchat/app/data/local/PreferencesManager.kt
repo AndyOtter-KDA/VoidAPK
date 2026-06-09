@@ -25,6 +25,10 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean("biometric_lock", false)
         set(value) = prefs.edit().putBoolean("biometric_lock", value).apply()
 
+    var pinCode: String?
+        get() = prefs.getString("pin_code", null)
+        set(value) = prefs.edit().putString("pin_code", value).apply()
+
     var theme: String
         get() = prefs.getString("theme", "DARK") ?: "DARK"
         set(value) = prefs.edit().putString("theme", value).apply()

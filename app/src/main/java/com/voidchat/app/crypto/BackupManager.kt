@@ -49,6 +49,7 @@ object BackupManager {
                 put("defaultSelfDestruct", payload.settings.defaultSelfDestruct)
                 put("biometricLock", payload.settings.biometricLock)
                 put("theme", payload.settings.theme)
+                put("pinCode", payload.settings.pinCode ?: JSONObject.NULL)
             })
             if (includeMessages) {
                 put("messageHistory", JSONArray(payload.messageHistory))
@@ -100,7 +101,8 @@ object BackupManager {
                 soundEnabled = settingsObj.optBoolean("soundEnabled", true),
                 defaultSelfDestruct = settingsObj.optInt("defaultSelfDestruct", 0),
                 biometricLock = settingsObj.optBoolean("biometricLock", false),
-                theme = settingsObj.optString("theme", "DARK")
+                theme = settingsObj.optString("theme", "DARK"),
+                pinCode = if (settingsObj.isNull("pinCode")) null else settingsObj.optString("pinCode", null)
             )
 
             val msgHistoryArr = json.getJSONArray("messageHistory")
