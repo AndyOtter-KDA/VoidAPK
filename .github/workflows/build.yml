@@ -15,18 +15,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Clean potentially corrupt Gradle Wrapper
-        run: rm -rf gradle/wrapper gradlew gradlew.bat
-
-      - name: Generate Clean Secure Gradle 8.4 Wrapper
-        run: gradle wrapper --gradle-version 8.4 --no-daemon
+      - name: Ensure gradlew line endings are LF
+        run: sed -i 's/\r$//' gradlew
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
