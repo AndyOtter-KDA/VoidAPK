@@ -5,9 +5,6 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,27 +17,18 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Setup Gradle CLI
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.3.1
-          cache-disabled: false
-
-      - name: Regenerate Pristine Gradle Wrapper
-        run: gradle wrapper --gradle-version 9.3.1 --no-daemon
-
-      - name: Grant execute permission for gradlew and fix line endings
-        run: |
-          sed -i 's/\r$//' gradlew
-          chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: void-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
