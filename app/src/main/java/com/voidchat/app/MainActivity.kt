@@ -5,11 +5,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.rememberNavController
 import com.voidchat.app.data.local.AppDatabase
 import com.voidchat.app.ui.navigation.NavGraph
@@ -78,34 +90,34 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val currentStartDest = startDestination
                     if (currentStartDest == null) {
-                        androidx.compose.foundation.layout.Box(
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .androidx.compose.foundation.background(com.voidchat.app.ui.theme.VoidBlack),
-                            contentAlignment = androidx.compose.ui.Alignment.Center
+                                .background(com.voidchat.app.ui.theme.VoidBlack),
+                            contentAlignment = Alignment.Center
                         ) {
                             com.voidchat.app.ui.theme.ScanlineOverlay()
-                            androidx.compose.foundation.layout.Column(
-                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
                             ) {
-                                androidx.compose.material3.Text(
+                                Text(
                                     text = "VOID SECURE COGNITIVE SHIELD",
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontFamily = FontFamily.Monospace,
                                     color = com.voidchat.app.ui.theme.NeonCyan,
                                     fontSize = 12.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    fontWeight = FontWeight.Bold,
                                     letterSpacing = 2.sp
                                 )
-                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
-                                androidx.compose.material3.CircularProgressIndicator(
+                                Spacer(modifier = Modifier.height(16.dp))
+                                CircularProgressIndicator(
                                     color = com.voidchat.app.ui.theme.HotPink,
                                     strokeWidth = 2.dp
                                 )
-                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
-                                androidx.compose.material3.Text(
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
                                     text = "DECRYPTING SYSTEM KEYSTORE SEGMENTS...",
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontFamily = FontFamily.Monospace,
                                     color = com.voidchat.app.ui.theme.TextMuted,
                                     fontSize = 8.sp
                                 )
