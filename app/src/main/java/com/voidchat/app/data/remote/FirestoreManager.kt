@@ -89,6 +89,110 @@ object FirestoreManager {
         return chat.chatId
     }
 
+    suspend fun uploadPublicKey(chatId: String, userDisplayId: String, publicKeyBase64: String) {
+        Log.d("VoidKeyExchange", "uploadPublicKey: Preparing to upload key for user $userDisplayId in chat $chatId")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            val docRef = db.collection("chats").document(chatId)
+            val doc = docRef.get().await()
+            val updates = hashMapOf<String, Any>()
+            if (doc.exists()) {
+                val participantA = doc.getString("participantA") ?: ""
+                val participantB = doc.getString("participantB") ?: ""
+                Log.d("VoidKeyExchange", "uploadPublicKey: Chat exists. participantA=$participantA, participantB=$participantB")
+                if (userDisplayId == participantA) {
+                    updates["publicKeyA"] = publicKeyBase64
+                } else if (userDisplayId == participantB) {
+                    updates["publicKeyB"] = publicKeyBase64
+                } else {
+                    Log.w("VoidKeyExchange", "uploadPublicKey: user displayId $userDisplayId did not match participantA or participantB exactly. Checking EMPTY/uninitialized slots.")
+                    if (participantA.isEmpty() || participantA == userDisplayId) {
+                        updates["publicKeyA"] = publicKeyBase64
+                    } else {
+                        updates["publicKeyB"] = publicKeyBase64
+                    }
+                }
+                docRef.update(updates).await()
+                Log.d("VoidKeyExchange", "uploadPublicKey: Key updated successfully.")
+            } else {
+                Log.w("VoidKeyExchange", "uploadPublicKey: Chat document $chatId didn't exist yet. Initializing the document with public key structure.")
+                updates["chatId"] = chatId
+                updates["participantA"] = userDisplayId
+                updates["publicKeyA"] = publicKeyBase64
+                updates["keyExchangeComplete"] = false
+                updates["createdAt"] = System.currentTimeMillis()
+                updates["lastMessageAt"] = System.currentTimeMillis()
+                updates["backgroundTheme"] = "DEFAULT"
+                docRef.set(updates, SetOptions.merge()).await()
+                Log.d("VoidKeyExchange", "uploadPublicKey: Chat document initialized with $userDisplayId as participantA & publicKeyA.")
+            }
+        } catch (e: Exception) {
+            Log.e("VoidKeyExchange", "uploadPublicKey: Error setting public key: ${e.message}", e)
+        }
+    }
+
+    fun listenForKeyExchange(chatId: String, userDisplayId: String): Flow<Boolean> = callbackFlow {
+        Log.d("VoidKeyExchange", "listenForKeyExchange: Subscribing to $chatId")
+        val db = FirebaseFirestore.getInstance()
+        val listener = db.collection("chats").document(chatId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VoidKeyExchange", "listenForKeyExchange: Snapshot error: ${error.message}", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val pubA = snapshot.getString("publicKeyA") ?: ""
+                    val pubB = snapshot.getString("publicKeyB") ?: ""
+                    val isComplete = pubA.isNotEmpty() && pubB.isNotEmpty()
+                    Log.d("VoidKeyExchange", "listenForKeyExchange: pubA exists=${pubA.isNotEmpty()}, pubB exists=${pubB.isNotEmpty()}, isComplete=$isComplete")
+                    trySend(isComplete)
+                } else {
+                    Log.d("VoidKeyExchange", "listenForKeyExchange: Document for $chatId does not exist yet.")
+                    trySend(false)
+                }
+            }
+        awaitClose {
+            Log.d("VoidKeyExchange", "listenForKeyExchange: Closing listener for $chatId")
+            listener.remove()
+        }
+    }
+
+    suspend fun getChat(chatId: String): Chat? {
+        val db = FirebaseFirestore.getInstance()
+        return try {
+            val doc = db.collection("chats").document(chatId).get().await()
+            if (doc.exists()) {
+                Chat(
+                    chatId = doc.id,
+                    participantA = doc.getString("participantA") ?: "",
+                    participantB = doc.getString("participantB") ?: "",
+                    publicKeyA = doc.getString("publicKeyA") ?: "",
+                    publicKeyB = doc.getString("publicKeyB") ?: "",
+                    keyExchangeComplete = doc.getBoolean("keyExchangeComplete") ?: false,
+                    createdAt = doc.getLong("createdAt") ?: 0L,
+                    lastMessageAt = doc.getLong("lastMessageAt") ?: 0L,
+                    backgroundTheme = doc.getString("backgroundTheme") ?: ""
+                )
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("VoidKeyExchange", "getChat: Error fetching chat $chatId: ${e.message}", e)
+            null
+        }
+    }
+
+    suspend fun markKeyExchangeComplete(chatId: String) {
+        val db = FirebaseFirestore.getInstance()
+        try {
+            db.collection("chats").document(chatId).update("keyExchangeComplete", true).await()
+            Log.d("VoidKeyExchange", "markKeyExchangeComplete: Marked keyExchangeComplete=true for $chatId")
+        } catch (e: Exception) {
+            Log.e("VoidKeyExchange", "markKeyExchangeComplete error: ${e.message}", e)
+        }
+    }
+
     fun getChats(userDisplayId: String): Flow<List<Chat>> = callbackFlow {
         Log.d(TAG, "getChats: Subscribing to real-time chats snapshot for displayId: $userDisplayId")
         val db = FirebaseFirestore.getInstance()

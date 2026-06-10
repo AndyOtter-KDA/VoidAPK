@@ -270,7 +270,7 @@ fun ChatRowItem(
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = if (chat.keyExchangeComplete) "E2E OK" else "PENDING",
+                        text = if (chat.keyExchangeComplete) "E2E OK" else "SECURING CHAT...",
                         color = if (chat.keyExchangeComplete) MatrixGreen else WarningYellow,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp

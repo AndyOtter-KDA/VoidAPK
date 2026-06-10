@@ -1,5 +1,6 @@
 package com.voidchat.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,6 +36,8 @@ fun ChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val state by viewModel.chatState.collectAsState()
+    val decryptedMessages by viewModel.decryptedMessages.collectAsState()
+    val context = LocalContext.current
 
     var textInput by remember { mutableStateOf("") }
     var selectedTimerSeconds by remember { mutableStateOf(0) } // 0 = Off
@@ -96,7 +100,7 @@ fun ChatScreen(
 
             Column(modifier = Modifier.fillMaxSize()) {
                 // Warning panel if not completed Crypt state
-                if (state is ChatState.KeyExchange) {
+                if (state is ChatState.KeyExchange || state is ChatState.Loading) {
                     Surface(
                         color = VoidDarkNavy,
                         border = BorderStroke(1.dp, WarningYellow),
@@ -115,7 +119,7 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Establishing secure Diffie-Hellman entropy tunnel...",
+                                text = "⏳ Securing chat...",
                                 color = WarningYellow,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
@@ -136,7 +140,8 @@ fun ChatScreen(
                     items(reversedList) { msg ->
                         MessageBubble(
                             message = msg,
-                            myDisplayId = myDisplayId
+                            myDisplayId = myDisplayId,
+                            decryptedText = decryptedMessages[msg.messageId]
                         )
                     }
                 }
@@ -188,14 +193,17 @@ fun ChatScreen(
                                 }
                             }
 
+                            val isSecure = state is ChatState.Encrypted
                             Text(
-                                text = "TUNNEL ACTIVE",
-                                color = MatrixGreen,
+                                text = if (isSecure) "🔐 Encrypted" else "⏳ Securing chat...",
+                                color = if (isSecure) MatrixGreen else WarningYellow,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             )
                         }
+
+                        val isKeyExchangeInProgress = state is ChatState.KeyExchange || state is ChatState.Loading
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -204,12 +212,20 @@ fun ChatScreen(
                             OutlinedTextField(
                                 value = textInput,
                                 onValueChange = { textInput = it },
-                                placeholder = { Text("SEND SECURED PAYLOAD...", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted) },
+                                enabled = !isKeyExchangeInProgress,
+                                placeholder = { Text(
+                                    text = if (isKeyExchangeInProgress) "TUNNEL SECURING..." else "SEND SECURED PAYLOAD...",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = TextMuted
+                                ) },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = NeonCyan,
                                     unfocusedBorderColor = BorderDark,
                                     focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary
+                                    unfocusedTextColor = TextPrimary,
+                                    disabledBorderColor = BorderDark,
+                                    disabledTextColor = TextMuted
                                 ),
                                 textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
                                 modifier = Modifier.weight(1f),
@@ -221,19 +237,24 @@ fun ChatScreen(
 
                             IconButton(
                                 onClick = {
-                                    if (textInput.trim().isNotEmpty()) {
+                                    if (isKeyExchangeInProgress) {
+                                        Toast.makeText(context, "Waiting for secure connection...", Toast.LENGTH_SHORT).show()
+                                    } else if (textInput.trim().isNotEmpty()) {
                                         viewModel.sendMessage(textInput, selectedTimerSeconds)
                                         textInput = ""
                                     }
                                 },
                                 modifier = Modifier
                                     .size(48.dp)
-                                    .background(NeonCyan, RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isKeyExchangeInProgress) BorderDark else NeonCyan,
+                                        RoundedCornerShape(8.dp)
+                                    )
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = VoidBlack
+                                    contentDescription = if (isKeyExchangeInProgress) "Waiting for secure connection..." else "Send",
+                                    tint = if (isKeyExchangeInProgress) TextMuted else VoidBlack
                                 )
                             }
                         }

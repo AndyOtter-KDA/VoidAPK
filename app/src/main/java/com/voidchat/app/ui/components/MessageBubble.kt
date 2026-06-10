@@ -23,6 +23,7 @@ import com.voidchat.app.ui.theme.*
 fun MessageBubble(
     message: Message,
     myDisplayId: String,
+    decryptedText: String?,
     modifier: Modifier = Modifier
 ) {
     val isMine = message.senderId == myDisplayId
@@ -64,8 +65,11 @@ fun MessageBubble(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(
-                        // Since this is encrypted in production models, we output standard UI payload securely
-                        text = if (message.destroyed) "[SEAL RECOILED - ZEROED OUT]" else message.encryptedPayload.take(32) + "...",
+                        text = if (message.destroyed) {
+                            "[SEAL RECOILED - ZEROED OUT]"
+                        } else {
+                            decryptedText ?: "[Encrypted message — waiting for key exchange]"
+                        },
                         color = TextPrimary,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace
