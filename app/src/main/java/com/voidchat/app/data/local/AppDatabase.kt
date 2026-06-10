@@ -14,7 +14,7 @@ import com.voidchat.app.data.models.Contact
         Message::class,
         Contact::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

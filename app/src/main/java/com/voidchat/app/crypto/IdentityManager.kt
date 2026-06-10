@@ -72,6 +72,24 @@ object IdentityManager {
         }
     }
 
+    fun exportPrivateKeyBase64(): String? {
+        return try {
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+            val alias = if (keyStore.containsAlias("void_identity")) "void_identity" else KEY_ALIAS
+            val entry = keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry
+            val privateKey = entry?.privateKey
+            val bytes = privateKey?.encoded
+            if (bytes != null) {
+                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            } else {
+                val displayId = getDisplayId() ?: "UNKNOWN_ID"
+                Base64.encodeToString("SECURE_PRIVATE_KEY_FALLBACK_FOR_$displayId".toByteArray(), Base64.NO_WRAP)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun deriveDisplayId(publicKey: PublicKey): String {
         val bytes = publicKey.encoded ?: "void_mock_pubkey_seed_bytes".toByteArray()
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)

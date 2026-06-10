@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -45,9 +46,19 @@ fun ChatScreen(
     var textInput by remember { mutableStateOf("") }
     var selectedTimerSeconds by remember { mutableStateOf(0) } // 0 = Off
     var expandedDropdown by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    var showChatInfoDialog by remember { mutableStateOf(false) }
+    var chatInfoUsername by remember { mutableStateOf("") }
+    var chatInfoDisplayId by remember { mutableStateOf("") }
+    var chatInfoKeyStatus by remember { mutableStateOf("") }
+    var chatInfoCreatedAt by remember { mutableStateOf(0L) }
+
+    var showMessageSettingsDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(chatId) {
         viewModel.initChat(chatId, "")
+        selectedTimerSeconds = viewModel.getChatSelfDestructDefault()
     }
 
     // Modern Pulsing logic for WAITING_FOR_KEY_EXCHANGE
@@ -93,12 +104,14 @@ fun ChatScreen(
                         }
                     },
                     actions = {
+                        var showActionMenu by remember { mutableStateOf(false) }
+
                         if (state is ChatState.ENCRYPTED) {
                             Surface(
                                 color = VoidDarkBlue,
                                 shape = RoundedCornerShape(4.dp),
                                 border = BorderStroke(1.dp, MatrixGreen),
-                                modifier = Modifier.padding(end = 8.dp)
+                                modifier = Modifier.padding(end = 4.dp)
                             ) {
                                 Text(
                                     text = "🔐 ENCRYPTED",
@@ -114,7 +127,7 @@ fun ChatScreen(
                                 color = VoidDarkBlue,
                                 shape = RoundedCornerShape(4.dp),
                                 border = BorderStroke(1.dp, WarningYellow),
-                                modifier = Modifier.padding(end = 8.dp).alpha(pulseAlpha)
+                                modifier = Modifier.padding(end = 4.dp).alpha(pulseAlpha)
                             ) {
                                 Text(
                                     text = "⏳ SECURING...",
@@ -125,6 +138,83 @@ fun ChatScreen(
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
                             }
+                        }
+
+                        IconButton(onClick = { showActionMenu = true }) {
+                            Icon(imageVector = Icons.Default.MoreVert, contentDescription = "More Actions", tint = NeonCyan)
+                        }
+
+                         DropdownMenu(
+                            expanded = showActionMenu,
+                            onDismissRequest = { showActionMenu = false },
+                            modifier = Modifier.background(VoidDarkNavy)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("CHAT INFO", fontFamily = FontFamily.Monospace, color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showActionMenu = false
+                                    viewModel.getChatInfo { username, displayId, keyStatus, createdAt ->
+                                        chatInfoUsername = username
+                                        chatInfoDisplayId = displayId
+                                        chatInfoKeyStatus = keyStatus
+                                        chatInfoCreatedAt = createdAt
+                                        showChatInfoDialog = true
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("MESSAGE SETTINGS", fontFamily = FontFamily.Monospace, color = TextPrimary, fontSize = 11.sp) },
+                                onClick = {
+                                    showActionMenu = false
+                                    selectedTimerSeconds = viewModel.getChatSelfDestructDefault()
+                                    showMessageSettingsDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("SAVE TO CONTACTS", fontFamily = FontFamily.Monospace, color = TextPrimary, fontSize = 11.sp) },
+                                onClick = {
+                                    showActionMenu = false
+                                    viewModel.saveToContacts(chatId) { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("CLEAR MESSAGES", fontFamily = FontFamily.Monospace, color = TextPrimary, fontSize = 11.sp) },
+                                onClick = {
+                                    showActionMenu = false
+                                    viewModel.clearMessages(chatId) {
+                                        Toast.makeText(context, "All messages cleared locally", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("DELETE CHAT LOCALLY", fontFamily = FontFamily.Monospace, color = TextPrimary, fontSize = 11.sp) },
+                                onClick = {
+                                    showActionMenu = false
+                                    viewModel.deleteChatLocally(chatId) {
+                                        Toast.makeText(context, "Chat deleted from this device", Toast.LENGTH_SHORT).show()
+                                        onNavigateBack()
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("DELETE FOR EVERYONE", fontFamily = FontFamily.Monospace, color = HotPink, fontSize = 11.sp) },
+                                onClick = {
+                                    showActionMenu = false
+                                    showDeleteConfirmation = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("BLOCK USER", fontFamily = FontFamily.Monospace, color = ErrorRed, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    showActionMenu = false
+                                    viewModel.blockUser {
+                                        Toast.makeText(context, "User blocked. Chat hidden.", Toast.LENGTH_LONG).show()
+                                        onNavigateBack()
+                                    }
+                                }
+                            )
                         }
                     }
                 )
@@ -138,6 +228,159 @@ fun ChatScreen(
                 .padding(innerPadding)
         ) {
             ScanlineOverlay()
+
+            if (showDeleteConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirmation = false },
+                    title = { Text("TERMINATE SECURE CHANNEL", fontFamily = FontFamily.Monospace, color = HotPink, fontWeight = FontWeight.Bold, fontSize = 14.sp) },
+                    text = {
+                        Text(
+                            "This will delete the chat and all messages for both users. This cannot be undone.",
+                            fontFamily = FontFamily.Monospace,
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showDeleteConfirmation = false
+                                viewModel.deleteChatForEveryone {
+                                    Toast.makeText(context, "Chat deleted for everyone", Toast.LENGTH_SHORT).show()
+                                    onNavigateBack()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = HotPink),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text("TERMINATE", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirmation = false }) {
+                            Text("ABORT", fontFamily = FontFamily.Monospace, color = NeonCyan)
+                        }
+                    },
+                    containerColor = VoidDarkNavy,
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+
+            if (showChatInfoDialog) {
+                AlertDialog(
+                    onDismissRequest = { showChatInfoDialog = false },
+                    title = {
+                        Text(
+                            "SECURE TELEMETRY SHEET",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Column {
+                                Text("PEER ADDRESS", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextMuted)
+                                Text(chatInfoUsername.ifEmpty { "Resolving Node..." }, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary)
+                            }
+                            Column {
+                                Text("DEVICE ID HASH", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextMuted)
+                                Text(chatInfoDisplayId, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextPrimary)
+                            }
+                            Column {
+                                Text("ECDH HANDSHAKE STATE", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextMuted)
+                                Text(chatInfoKeyStatus, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = MatrixGreen)
+                            }
+                            Column {
+                                Text("ESTABLISHED TIME", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextMuted)
+                                val dateStr = remember(chatInfoCreatedAt) {
+                                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(chatInfoCreatedAt))
+                                }
+                                Text(dateStr, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextPrimary)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { showChatInfoDialog = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text("CLOSE", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    containerColor = VoidDarkNavy,
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+
+            if (showMessageSettingsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showMessageSettingsDialog = false },
+                    title = {
+                        Text(
+                            "DEFAULT SELF-DESTRUCT TIMER",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NeonCyan
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Set the default auto-purge timer for all outgoing transmission payloads inside this channel.",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                            val choices = listOf(
+                                Pair("OFF (Default)", 0),
+                                Pair("5 Seconds", 5),
+                                Pair("30 Seconds", 30),
+                                Pair("1 Minute", 60),
+                                Pair("5 Minutes", 300)
+                            )
+                            choices.forEach { (label, secs) ->
+                                Button(
+                                    onClick = {
+                                        viewModel.setChatSelfDestructDefault(secs)
+                                        selectedTimerSeconds = secs
+                                        showMessageSettingsDialog = false
+                                        Toast.makeText(context, "Default self-destruct configured", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (selectedTimerSeconds == secs) HotPink else VoidDarkBlue
+                                    ),
+                                    border = BorderStroke(1.dp, if (selectedTimerSeconds == secs) HotPink else BorderDark),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (selectedTimerSeconds == secs) VoidBlack else TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showMessageSettingsDialog = false }) {
+                            Text("BACK", fontFamily = FontFamily.Monospace, color = TextMuted)
+                        }
+                    },
+                    containerColor = VoidDarkNavy,
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 

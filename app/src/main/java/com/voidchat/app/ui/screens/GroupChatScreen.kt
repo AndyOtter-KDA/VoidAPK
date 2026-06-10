@@ -12,6 +12,13 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import kotlinx.coroutines.launch
+import androidx.compose.ui.text.style.TextOverflow
+import com.voidchat.app.data.models.GroupMessage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,7 +28,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.voidchat.app.data.models.GroupMessage
 import com.voidchat.app.ui.theme.*
 import com.voidchat.app.viewmodel.GroupChatViewModel
 
@@ -43,6 +49,7 @@ fun GroupChatScreen(
     var expandedDropdown by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(groupId) {
         viewModel.loadMessages(groupId)
@@ -55,7 +62,11 @@ fun GroupChatScreen(
             Column {
                 TopAppBar(
                     title = {
-                        Column {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigateToGroupInfo(groupId) }
+                        ) {
                             Text(
                                 text = groupInfo?.name ?: "MULTI-NODE SYSTEM CHANNEL",
                                 color = TextPrimary,
@@ -69,6 +80,16 @@ fun GroupChatScreen(
                                 fontSize = 9.sp,
                                 fontFamily = FontFamily.Monospace
                             )
+                            if (!groupInfo?.description.isNullOrEmpty()) {
+                                Text(
+                                    text = "DESC: ${groupInfo?.description}",
+                                    color = NeonCyan,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = VoidBlack),
@@ -80,13 +101,17 @@ fun GroupChatScreen(
                     actions = {
                         IconButton(
                             onClick = {
-                                androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
-                                    // Generate and copy invite code
-                                    val code = "void://group/$groupId/${System.currentTimeMillis()}"
-                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("Void Group invite", code)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Copied E2E invite transmission code", Toast.LENGTH_SHORT).show()
+                                scope.launch {
+                                    try {
+                                        val linkId = viewModel.createInviteLink(0L, 100)
+                                        val code = "void://group/$groupId/$linkId"
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Void Group invite", code)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Copied secure E2E join-link to clipboard", Toast.LENGTH_SHORT).show()
+                                    } catch(e: Exception) {
+                                        Toast.makeText(context, "Link creation error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             }
                         ) {
@@ -97,6 +122,45 @@ fun GroupChatScreen(
                         }
                     }
                 )
+                if (!groupInfo?.pinnedMessageText.isNullOrEmpty()) {
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "📌 GROUP ANNOUNCEMENT (PINNED)",
+                                    color = NeonCyan,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = groupInfo?.pinnedMessageText ?: "",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            // Button to unpin if user is admin/owner
+                            val isOwner = groupInfo?.createdBy == myDisplayId
+                            if (isOwner) {
+                                IconButton(onClick = { viewModel.unpinMessage() }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Unpin", tint = TextMuted)
+                                }
+                            }
+                        }
+                    }
+                }
                 Divider(color = BorderDark, thickness = 1.dp)
             }
         }
@@ -118,7 +182,13 @@ fun GroupChatScreen(
                 ) {
                     val reversedList = messages.asReversed()
                     items(reversedList) { msg ->
-                        GroupMessageBubble(msg = msg, myDisplayId = myDisplayId)
+                        GroupMessageBubble(
+                            msg = msg,
+                            myDisplayId = myDisplayId,
+                            isOwner = groupInfo?.createdBy == myDisplayId,
+                            onPin = { viewModel.pinMessage(msg.messageId, msg.encryptedPayload) },
+                            onDelete = { viewModel.deleteGroupMessage(msg.messageId) }
+                        )
                     }
                 }
 
@@ -214,49 +284,97 @@ fun GroupChatScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun GroupMessageBubble(
     msg: GroupMessage,
-    myDisplayId: String
+    myDisplayId: String,
+    isOwner: Boolean,
+    onPin: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val isMine = msg.senderId == myDisplayId
+    var showMenu by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         horizontalAlignment = if (isMine) Alignment.End else Alignment.Start
     ) {
-        Surface(
-            shape = RoundedCornerShape(8.dp),
-            color = if (isMine) VoidBlack else VoidDarkBlue,
-            border = BorderStroke(1.dp, if (isMine) NeonCyan else BorderDark),
-            modifier = Modifier.widthIn(max = 280.dp)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                if (!isMine) {
+        Box {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isMine) VoidBlack else VoidDarkBlue,
+                border = BorderStroke(1.dp, if (isMine) NeonCyan else BorderDark),
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .combinedClickable(
+                        onClick = { showMenu = true },
+                        onLongClick = { showMenu = true }
+                    )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    if (!isMine) {
+                        Text(
+                            text = "NODE-${msg.senderId.take(4).uppercase()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HotPinkLight,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
                     Text(
-                        text = "NODE-${msg.senderId.take(4).uppercase()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HotPinkLight,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                        text = msg.encryptedPayload,
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                     Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "SEQ ${msg.keyGeneration} // UTC",
+                        color = TextMuted,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
-                Text(
-                    text = msg.encryptedPayload,
-                    color = TextPrimary,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
+            }
+
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false },
+                modifier = Modifier.background(VoidDarkBlue)
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Share, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("📌 PIN AS ANNOUNCEMENT", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
+                    },
+                    onClick = {
+                        showMenu = false
+                        onPin()
+                    }
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "SEQ ${msg.keyGeneration} // UTC",
-                    color = TextMuted,
-                    fontSize = 8.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                if (isMine || isOwner) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = HotPink, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("🗑️ DELETE MESSAGE", color = HotPink, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
+                }
             }
         }
     }

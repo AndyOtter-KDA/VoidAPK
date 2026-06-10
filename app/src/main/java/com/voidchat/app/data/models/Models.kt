@@ -26,7 +26,8 @@ data class Message(
     val selfDestructSeconds: Int,
     val destroyed: Boolean,
     val readAt: Long,
-    val isRead: Boolean
+    val isRead: Boolean,
+    val decryptedText: String = ""
 )
 
 @Entity(tableName = "local_chats")
@@ -71,7 +72,11 @@ data class GroupChat(
     val createdAt: Long,
     val members: String, // Stored as CSV or serialized string
     val currentGroupKeyGeneration: Int,
-    val defaultSelfDestructSeconds: Int
+    val defaultSelfDestructSeconds: Int,
+    val description: String = "",
+    val pinnedMessageId: String = "",
+    val pinnedMessageText: String = "",
+    val bannedMembers: String = ""
 )
 
 data class GroupMember(
@@ -144,4 +149,23 @@ data class BackupPayload(
     val contacts: List<String>,
     val settings: AppSettings,
     val messageHistory: List<String>
+)
+
+data class SupportTicketReply(
+    val replyId: String = "",
+    val senderId: String = "",
+    val message: String = "",
+    val createdAt: Long = 0L
+)
+
+data class SupportTicket(
+    val ticketId: String = "",
+    val displayId: String = "",
+    val username: String = "",
+    val subject: String = "",
+    val message: String = "",
+    val deviceInfo: String = "",
+    val status: String = "open",
+    val createdAt: Long = 0L,
+    val replies: List<SupportTicketReply> = emptyList()
 )

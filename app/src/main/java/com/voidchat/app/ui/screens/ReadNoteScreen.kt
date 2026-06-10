@@ -1,5 +1,6 @@
 package com.voidchat.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,6 +29,7 @@ fun ReadNoteScreen(
     shareCode: String,
     viewModel: NoteViewModel,
     onNavigateBack: () -> Unit,
+    onNavigateToGroupChat: (groupId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var rawInputCode by remember { mutableStateOf(shareCode) }
@@ -111,6 +113,125 @@ fun ReadNoteScreen(
                                 fontSize = 14.sp,
                                 fontFamily = FontFamily.Monospace
                             )
+                        }
+                    }
+
+                    val inviteUrl = remember(body) {
+                        val regex = "void://group/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+".toRegex()
+                        regex.find(body)?.value
+                    }
+
+                    inviteUrl?.let { url ->
+                        var isJoining by remember { mutableStateOf(false) }
+                        val context = androidx.compose.ui.platform.LocalContext.current
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                isJoining = true
+                                viewModel.joinGroupFromNote(url) { realGroupId ->
+                                    isJoining = false
+                                    if (realGroupId != null) {
+                                        Toast.makeText(context, "Handshake verified! Joined group channel.", Toast.LENGTH_SHORT).show()
+                                        onNavigateToGroupChat(realGroupId)
+                                    } else {
+                                        Toast.makeText(context, "Handshake rejection or banned from sector.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            enabled = !isJoining,
+                            colors = ButtonDefaults.buttonColors(containerColor = HotPinkLight),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (isJoining) "RESOLVING ROUTING SEGMENT..." else "CONNECT TO GROUP CHANNEL",
+                                fontFamily = FontFamily.Monospace,
+                                color = VoidBlack,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(1.dp, BorderDark),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "RESOLVE MANUAL HANDSHAKE INVITE LINK",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "If you have received an out-of-band group segment handshake link (e.g., void://group/xyz/abc), paste it below to securely connect.",
+                                color = TextMuted,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                lineHeight = 13.sp
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            var manualInviteInput by remember { mutableStateOf("") }
+                            var isManualJoining by remember { mutableStateOf(false) }
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = manualInviteInput,
+                                    onValueChange = { manualInviteInput = it },
+                                    placeholder = { Text("Paste invite link...", color = TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = NeonCyan,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        val code = manualInviteInput.trim()
+                                        if (code.isNotEmpty()) {
+                                            isManualJoining = true
+                                            viewModel.joinGroupFromNote(code) { realGroupId ->
+                                                isManualJoining = false
+                                                if (realGroupId != null) {
+                                                    Toast.makeText(context, "Handshake verified! Joined group channel.", Toast.LENGTH_SHORT).show()
+                                                    onNavigateToGroupChat(realGroupId)
+                                                } else {
+                                                    Toast.makeText(context, "Handshake rejection or banned from sector.", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = !isManualJoining,
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isManualJoining) "JOINING" else "JOIN",
+                                        color = VoidBlack,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
 

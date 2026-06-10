@@ -37,6 +37,9 @@ fun CreateNoteScreen(
     var selectedLifetimeSeconds by remember { mutableStateOf(0) } // 0 = First view
     var maxViews by remember { mutableStateOf(1) }
     var expandedLifetime by remember { mutableStateOf(false) }
+    var showGroupDropdown by remember { mutableStateOf(false) }
+
+    val groupChats by viewModel.groupChats.collectAsState()
 
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -166,7 +169,7 @@ fun CreateNoteScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    OutlinedTextField(
+                     OutlinedTextField(
                         value = contentInput,
                         onValueChange = { contentInput = it },
                         placeholder = { Text("ENTER SECURE CONTENT...", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted) },
@@ -182,6 +185,54 @@ fun CreateNoteScreen(
                             .fillMaxWidth()
                             .heightIn(min = 140.dp, max = 240.dp)
                     )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Box {
+                            TextButton(
+                                onClick = { showGroupDropdown = true },
+                                colors = ButtonDefaults.textButtonColors(contentColor = HotPinkLight)
+                            ) {
+                                Text(
+                                    text = "+ ATTACH GROUP SEGMENT INVITE Link",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showGroupDropdown,
+                                onDismissRequest = { showGroupDropdown = false },
+                                modifier = Modifier.background(VoidDarkBlue)
+                            ) {
+                                if (groupChats.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("No Group Channels available", color = TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                        onClick = { showGroupDropdown = false }
+                                    )
+                                } else {
+                                    groupChats.forEach { group ->
+                                        DropdownMenuItem(
+                                            text = { Text(group.name, color = TextPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                            onClick = {
+                                                showGroupDropdown = false
+                                                viewModel.createGroupInviteAndAppend(group.groupId) { inviteUrl ->
+                                                    val spacing = if (contentInput.isEmpty()) "" else "\n\n"
+                                                    contentInput += "${spacing}Group Invite Link: $inviteUrl"
+                                                    Toast.makeText(context, "Appended invitation handshake context.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

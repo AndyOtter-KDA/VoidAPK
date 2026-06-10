@@ -28,6 +28,9 @@ object Routes {
     const val BACKUP = "backup"
     const val DONATE = "donate"
     const val SETTINGS = "settings"
+    const val PRIVACY_POLICY = "privacy_policy"
+    const val CONTACT_PICKER = "contact_picker"
+    const val SUPPORT_TICKET = "support_ticket"
 }
 
 @Composable
@@ -88,11 +91,17 @@ fun NavGraph(
                 onNavigateToChat = { chatId ->
                     navController.navigate("${Routes.CHAT}/${chatId}")
                 },
+                onNavigateToGroupChat = { groupId ->
+                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}")
+                },
                 onNavigateToJoinChat = {
                     navController.navigate(Routes.JOIN_CHAT)
                 },
                 onNavigateToCreateGroup = {
                     navController.navigate(Routes.CREATE_GROUP)
+                },
+                onNavigateToContactPicker = {
+                    navController.navigate(Routes.CONTACT_PICKER)
                 },
                 onNavigateToCreateNote = {
                     navController.navigate(Routes.CREATE_NOTE)
@@ -133,14 +142,36 @@ fun NavGraph(
             )
         }
 
-        composable(Routes.CREATE_GROUP) {
+        composable(
+            route = "${Routes.CREATE_GROUP}?members={members}",
+            arguments = listOf(
+                navArgument("members") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
             val vm: GroupChatViewModel = viewModel()
+            val initialMembers = backStackEntry.arguments?.getString("members")
             CreateGroupScreen(
                 viewModel = vm,
+                initialMembers = initialMembers,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToGroupChat = { groupId ->
                     navController.navigate("${Routes.GROUP_CHAT}/${groupId}") {
                         popUpTo(Routes.CREATE_GROUP) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.CONTACT_PICKER) {
+            ContactPickerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCreateGroup = { membersString ->
+                    navController.navigate("${Routes.CREATE_GROUP}?members=$membersString") {
+                        popUpTo(Routes.CONTACT_PICKER) { inclusive = true }
                     }
                 }
             )
@@ -214,7 +245,10 @@ fun NavGraph(
             ReadNoteScreen(
                 shareCode = code,
                 viewModel = vm,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToGroupChat = { groupId ->
+                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}")
+                }
             )
         }
 
@@ -228,15 +262,14 @@ fun NavGraph(
                 onNavigateToTransferIn = { navController.navigate(Routes.TRANSFER_IN) },
                 onNavigateToTransferOut = { navController.navigate(Routes.TRANSFER_OUT) },
                 onNavigateToDonate = { navController.navigate(Routes.DONATE) },
+                onNavigateToPrivacy = { navController.navigate(Routes.PRIVACY_POLICY) },
                 onLogOut = {
                     navController.navigate(Routes.ONBOARDING) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
                 onContactSupport = {
-                    chatVm.startSupportChat { chatId ->
-                        navController.navigate("${Routes.CHAT}/$chatId")
-                    }
+                    navController.navigate(Routes.SUPPORT_TICKET)
                 }
             )
         }
@@ -265,6 +298,18 @@ fun NavGraph(
 
         composable(Routes.DONATE) {
             DonateScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.PRIVACY_POLICY) {
+            PrivacyPolicyScreen(onNavigateBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.SUPPORT_TICKET) {
+            val vm: SupportTicketViewModel = viewModel()
+            SupportTicketScreen(
+                viewModel = vm,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

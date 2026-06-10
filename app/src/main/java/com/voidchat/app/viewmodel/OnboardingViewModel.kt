@@ -84,6 +84,15 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
                     return@launch
                 }
                 
+                // Add format validation: only alphanumeric + underscores, 3 to 20 chars
+                val allowedRegex = Regex("^[a-zA-Z0-9_]{3,20}$")
+                if (!allowedRegex.matches(trimmed)) {
+                    _state.value = OnboardingState.Error(
+                        "Format error: Handle must be 3-20 characters long and contain only alphanumeric characters and underscores (A-Z, 0-9, _). No spaces allowed."
+                    )
+                    return@launch
+                }
+                
                 // Real Firestore availability check
                 val available = FirestoreManager.checkUsernameAvailability(trimmed)
                 if (!available) {
@@ -128,7 +137,16 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
                 Log.d("VoidOnboardingVM", "setUsername complete: state = Restored")
             } catch (e: Exception) {
                 Log.e("VoidOnboardingVM", "setUsername failed: ${e.message}", e)
-                _state.value = OnboardingState.Error("Register identity handle error: ${e.localizedMessage}")
+                val errMsg = e.localizedMessage ?: "Unknown transmission failure"
+                val friendlyMsg = when {
+                    errMsg.contains("PERMISSION_DENIED", ignoreCase = true) -> 
+                        "Security handshake rejected (Firestore PERMISSION_DENIED). Check database permissions."
+                    errMsg.contains("UNAVAILABLE", ignoreCase = true) -> 
+                        "Secure network node unreachable. Check internet connection."
+                    else -> 
+                        "Register identity handle error: $errMsg"
+                }
+                _state.value = OnboardingState.Error(friendlyMsg)
             }
         }
     }

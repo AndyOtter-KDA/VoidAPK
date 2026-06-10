@@ -21,6 +21,16 @@ object KeyExchangeManager {
     private fun getAlias(chatId: String) = "void_chat_key_$chatId"
 
     fun generateChatKeyPair(chatId: String) {
+        try {
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+            if (keyStore.containsAlias(getAlias(chatId))) {
+                android.util.Log.d("VoidKeyExchange", "generateChatKeyPair: Key pair already exists in KeyStore for chatId: $chatId. Reusing existing key pair.")
+                return
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("VoidKeyExchange", "generateChatKeyPair: Error inspecting KeyStore; continuing to generate new key", e)
+        }
+
         val kpg = KeyPairGenerator.getInstance(
             KeyProperties.KEY_ALGORITHM_EC,
             KEYSTORE_PROVIDER

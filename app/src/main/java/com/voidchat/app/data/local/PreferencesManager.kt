@@ -41,6 +41,54 @@ class PreferencesManager(context: Context) {
         get() = prefs.getBoolean("donor_perks", false)
         set(value) = prefs.edit().putBoolean("donor_perks", value).apply()
 
+    fun saveChatKey(chatId: String, keyBase64: String) {
+        prefs.edit().putString("chat_key_$chatId", keyBase64).apply()
+    }
+
+    fun getChatKey(chatId: String): String? {
+        return prefs.getString("chat_key_$chatId", null)
+    }
+
+    fun deleteChatKey(chatId: String) {
+        prefs.edit().remove("chat_key_$chatId").apply()
+    }
+
+    fun getLocallyDeletedChats(): Set<String> {
+        return prefs.getStringSet("locally_deleted_chats", emptySet()) ?: emptySet()
+    }
+
+    fun saveLocallyDeletedChats(chats: Set<String>) {
+        prefs.edit().putStringSet("locally_deleted_chats", chats).apply()
+    }
+
+    fun saveBlockedUser(displayId: String) {
+        val blocked = getBlockedUsers().toMutableSet()
+        blocked.add(displayId)
+        prefs.edit().putStringSet("blocked_users", blocked).apply()
+    }
+
+    fun removeBlockedUser(displayId: String) {
+        val blocked = getBlockedUsers().toMutableSet()
+        blocked.remove(displayId)
+        prefs.edit().putStringSet("blocked_users", blocked).apply()
+    }
+
+    fun getBlockedUsers(): Set<String> {
+        return prefs.getStringSet("blocked_users", emptySet()) ?: emptySet()
+    }
+
+    fun isUserBlocked(displayId: String): Boolean {
+        return getBlockedUsers().contains(displayId)
+    }
+
+    fun saveChatSelfDestructDefault(chatId: String, seconds: Int) {
+        prefs.edit().putInt("self_destruct_$chatId", seconds).apply()
+    }
+
+    fun getChatSelfDestructDefault(chatId: String): Int {
+        return prefs.getInt("self_destruct_$chatId", 0)
+    }
+
     fun clearAll() {
         prefs.edit().clear().apply()
     }

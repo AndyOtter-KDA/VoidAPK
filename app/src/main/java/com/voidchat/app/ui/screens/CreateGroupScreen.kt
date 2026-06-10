@@ -8,8 +8,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -17,19 +20,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voidchat.app.ui.theme.*
+import kotlinx.coroutines.launch
 import com.voidchat.app.viewmodel.GroupChatViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateGroupScreen(
     viewModel: GroupChatViewModel,
+    initialMembers: String? = null,
     onNavigateBack: () -> Unit,
     onNavigateToGroupChat: (groupId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var groupName by remember { mutableStateOf("") }
+    var groupDescription by remember { mutableStateOf("") }
     var selectedDurSeconds by remember { mutableStateOf(0) }
     var expandedDropdown by remember { mutableStateOf(false) }
+    var autoCopyInvite by remember { mutableStateOf(true) }
+
+    val contacts by viewModel.contacts.collectAsState()
+    val scope = rememberCoroutineScope()
+    val selectedMembers = remember { mutableStateListOf<String>() }
+
+    LaunchedEffect(initialMembers) {
+        if (!initialMembers.isNullOrEmpty()) {
+            selectedMembers.clear()
+            selectedMembers.addAll(initialMembers.split(",").filter { it.isNotEmpty() })
+        }
+    }
 
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -98,6 +116,24 @@ fun CreateGroupScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = groupDescription,
+                    onValueChange = { groupDescription = it },
+                    label = { Text("SEGMENT DESCRIPTION", fontFamily = FontFamily.Monospace) },
+                    placeholder = { Text("What is this multi-node system channel about?", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Box {
@@ -138,16 +174,208 @@ fun CreateGroupScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "SELECT MEMBERS TO INCLUDE",
+                    color = NeonCyan,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                var customDisplayIdInput by remember { mutableStateOf("") }
+                
+                OutlinedTextField(
+                    value = customDisplayIdInput,
+                    onValueChange = { customDisplayIdInput = it },
+                    label = { Text("ADD NODE BY DISPLAY ID", fontFamily = FontFamily.Monospace, fontSize = 11.sp) },
+                    placeholder = { Text("Enter Display ID (e.g. peer_23a8h)", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = BorderDark,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        TextButton(
+                            onClick = {
+                                val trimmed = customDisplayIdInput.trim()
+                                if (trimmed.isNotEmpty()) {
+                                    if (!selectedMembers.contains(trimmed)) {
+                                        selectedMembers.add(trimmed)
+                                        Toast.makeText(context, "Added $trimmed to list", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Member already in designator list", Toast.LENGTH_SHORT).show()
+                                    }
+                                    customDisplayIdInput = ""
+                                }
+                            }
+                        ) {
+                            Text("ADD", color = NeonCyan, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
+
+                val customAddedMembers = selectedMembers.filter { isMbr -> !contacts.any { it.displayId == isMbr } }
+                if (customAddedMembers.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "MANUALLY DESIGNATED PEER CHANNELS",
+                        color = HotPinkLight,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    customAddedMembers.forEach { customId ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove",
+                                tint = ErrorRed,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable { selectedMembers.remove(customId) }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = customId,
+                                color = TextPrimary,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (contacts.isEmpty()) {
+                    Text(
+                        text = "No stored registry sync entries detected. Add manually above or use invite codes.",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                } else {
+                    contacts.forEach { contact ->
+                        val isChecked = selectedMembers.contains(contact.displayId)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isChecked) {
+                                        selectedMembers.remove(contact.displayId)
+                                    } else {
+                                        selectedMembers.add(contact.displayId)
+                                    }
+                                }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Checkbox(
+                                checked = isChecked,
+                                onCheckedChange = { checked ->
+                                    if (checked == true) {
+                                        selectedMembers.add(contact.displayId)
+                                    } else {
+                                        selectedMembers.remove(contact.displayId)
+                                    }
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = NeonCyan,
+                                    uncheckedColor = BorderDark,
+                                    checkmarkColor = VoidBlack
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "@${contact.nickname}",
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = contact.displayId,
+                                    color = TextMuted,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { autoCopyInvite = !autoCopyInvite }
+                        .padding(vertical = 4.dp)
+                ) {
+                    Checkbox(
+                        checked = autoCopyInvite,
+                        onCheckedChange = { autoCopyInvite = it == true },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = NeonCyan,
+                            uncheckedColor = BorderDark,
+                            checkmarkColor = VoidBlack
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "AUTO-COPY DEPLOYMENT INVITE LINK",
+                            color = TextPrimary,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Generates and logs an E2E registration handshake link to clipboard.",
+                            color = TextMuted,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Button(
                     onClick = {
                         val name = groupName.trim()
+                        val desc = groupDescription.trim()
                         if (name.isEmpty()) {
                             Toast.makeText(context, "Segment name required", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        viewModel.createGroup(name, selectedDurSeconds) { realGroupId ->
+                        viewModel.createGroup(name, desc, selectedDurSeconds, selectedMembers.toList()) { realGroupId ->
+                            if (autoCopyInvite) {
+                                try {
+                                    val code = viewModel.generateInviteLink(realGroupId)
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Void Group invite", code)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Channel safely provisioned! Invite copied.", Toast.LENGTH_LONG).show()
+                                } catch(e: Exception) {
+                                    Toast.makeText(context, "E2E Invite Link setup error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                             onNavigateToGroupChat(realGroupId)
                         }
                     },

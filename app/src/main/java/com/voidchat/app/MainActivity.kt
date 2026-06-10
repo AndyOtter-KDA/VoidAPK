@@ -22,21 +22,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
-        // Prevent screenshots and screen recordings app-wide on physical devices for absolute security.
-        // Bypassed on Emulators to permit the browser streaming preview to display and function.
-        val isEmulator = android.os.Build.FINGERPRINT.startsWith("generic") ||
-                android.os.Build.MODEL.contains("google_sdk") ||
-                android.os.Build.MODEL.contains("Emulator") ||
-                android.os.Build.HARDWARE.contains("goldfish") ||
-                android.os.Build.HARDWARE.contains("ranchu") ||
-                android.os.Build.PRODUCT.contains("sdk_gphone")
-        
-        if (!isEmulator) {
-            window.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                android.view.WindowManager.LayoutParams.FLAG_SECURE
-            )
-        }
         super.onCreate(savedInstanceState)
 
         setContent {
@@ -47,33 +32,40 @@ class MainActivity : ComponentActivity() {
                 var isAppLocked by remember { mutableStateOf(prefs.biometricLock && !prefs.pinCode.isNullOrEmpty()) }
 
                 LaunchedEffect(Unit) {
-                    val db = AppDatabase.getDatabase(applicationContext)
-                    val identity = db.identityDao().getIdentity()
-                    
-                    // Parse incoming deep links if configured
-                    val action: String? = intent?.action
-                    val dataUri = intent?.data
-                    
-                    if (dataUri != null && action == Intent.ACTION_VIEW) {
-                        val host = dataUri.host
-                        val path = dataUri.path
-                        if (host == "chat") {
-                            val targetId = path?.removePrefix("/") ?: ""
-                            startDestination = "${Routes.CHAT}/$targetId"
-                        } else if (host == "group") {
-                            val cleanPath = path?.removePrefix("/") ?: ""
-                            startDestination = "${Routes.GROUP_CHAT}/$cleanPath"
-                        } else if (host == "note") {
-                            val noteCode = path?.removePrefix("/") ?: ""
-                            startDestination = "${Routes.READ_NOTE}/$noteCode"
+                    try {
+                        val db = AppDatabase.getDatabase(applicationContext)
+                        val identity = db.identityDao().getIdentity()
+                        
+                        // Parse incoming deep links if configured
+                        val action: String? = intent?.action
+                        val dataUri = intent?.data
+                        
+                        if (dataUri != null && action == Intent.ACTION_VIEW) {
+                            val host = dataUri.host
+                            val path = dataUri.path
+                            if (host == "chat") {
+                                val targetId = path?.removePrefix("/") ?: ""
+                                startDestination = "${Routes.CHAT}/$targetId"
+                            } else if (host == "group") {
+                                val cleanPath = path?.removePrefix("/") ?: ""
+                                startDestination = "${Routes.GROUP_CHAT}/$cleanPath"
+                            } else if (host == "note") {
+                                val noteCode = path?.removePrefix("/") ?: ""
+                                startDestination = "${Routes.READ_NOTE}/$noteCode"
+                            }
                         }
-                    }
 
-                    if (startDestination == null) {
-                        startDestination = if (identity != null) {
-                            Routes.HOME
-                        } else {
-                            Routes.ONBOARDING
+                        if (startDestination == null) {
+                            startDestination = if (identity != null) {
+                                Routes.HOME
+                            } else {
+                                Routes.ONBOARDING
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("VoidMainActivity", "Startup error: ${e.message}", e)
+                        if (startDestination == null) {
+                            startDestination = Routes.ONBOARDING
                         }
                     }
                 }
@@ -84,11 +76,46 @@ class MainActivity : ComponentActivity() {
                         onUnlocked = { isAppLocked = false }
                     )
                 } else {
-                    startDestination?.let { startDest ->
+                    val currentStartDest = startDestination
+                    if (currentStartDest == null) {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .androidx.compose.foundation.background(com.voidchat.app.ui.theme.VoidBlack),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            com.voidchat.app.ui.theme.ScanlineOverlay()
+                            androidx.compose.foundation.layout.Column(
+                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = "VOID SECURE COGNITIVE SHIELD",
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = com.voidchat.app.ui.theme.NeonCyan,
+                                    fontSize = 12.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    letterSpacing = 2.sp
+                                )
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    color = com.voidchat.app.ui.theme.HotPink,
+                                    strokeWidth = 2.dp
+                                )
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(12.dp))
+                                androidx.compose.material3.Text(
+                                    text = "DECRYPTING SYSTEM KEYSTORE SEGMENTS...",
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = com.voidchat.app.ui.theme.TextMuted,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                    } else {
                         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                             NavGraph(
                                 navController = navController,
-                                startDestination = startDest,
+                                startDestination = currentStartDest,
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }

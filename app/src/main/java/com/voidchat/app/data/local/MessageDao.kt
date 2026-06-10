@@ -24,6 +24,9 @@ interface MessageDao {
     @Query("SELECT * FROM local_messages WHERE chatId = :chatId AND destroyed = 0")
     suspend fun getUndestroyedMessages(chatId: String): List<Message>
 
+    @Query("SELECT * FROM local_messages WHERE chatId = :chatId ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLastMessageForChat(chatId: String): Message?
+
     @Query("UPDATE local_messages SET destroyed = 1 WHERE messageId = :messageId")
     suspend fun markMessageDestroyed(messageId: String)
 }

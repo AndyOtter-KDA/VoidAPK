@@ -8,10 +8,18 @@ class VoidApp : Application() {
     override fun onCreate() {
         super.onCreate()
         
-        // Initialize Firebase
-        FirebaseApp.initializeApp(this)
+        try {
+            // Initialize Firebase
+            FirebaseApp.initializeApp(this)
+        } catch (e: Exception) {
+            android.util.Log.e("VoidApp", "Firebase init error: ${e.message}", e)
+        }
         
-        // Warm up and initialize room database safely on startup
-        AppDatabase.getDatabase(this)
+        try {
+            // Warm up and initialize room database safely on startup
+            AppDatabase.getDatabase(this)
+        } catch (e: Exception) {
+            android.util.Log.e("VoidApp", "Room DB init error: ${e.message}", e)
+        }
     }
 }

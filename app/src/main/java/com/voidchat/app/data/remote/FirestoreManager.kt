@@ -238,15 +238,31 @@ object FirestoreManager {
         try {
             db.collection("usernames").document(normalized).set(
                 hashMapOf(
-                    "username" to normalized,
+                    "username" to username,
                     "displayId" to displayId,
                     "registeredAt" to System.currentTimeMillis()
                 )
             ).await()
-            Log.d(TAG, "registerUsername: Registration successful for '$normalized'")
+            
+            Log.d(TAG, "registerUsername: Registration successful for '$normalized' and display ID '$displayId'")
         } catch (e: Exception) {
             Log.e(TAG, "registerUsername: Failed on '$normalized': ${e.message}", e)
             throw e
+        }
+    }
+
+    suspend fun getUsernameByDisplayId(displayId: String): String? {
+        val db = FirebaseFirestore.getInstance()
+        return try {
+            val query = db.collection("usernames").whereEqualTo("displayId", displayId).get().await()
+            if (!query.isEmpty) {
+                val u = query.documents.firstOrNull()?.getString("username")
+                if (!u.isNullOrEmpty()) return u
+            }
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "getUsernameByDisplayId failed for $displayId: ${e.message}", e)
+            null
         }
     }
 
@@ -267,13 +283,29 @@ object FirestoreManager {
     }
 
     suspend fun createGroup(group: GroupChat) {
-        Log.d(TAG, "createGroup: Writing new group: ID = ${group.groupId}")
+        Log.d("VoidFirestore", "createGroup: Writing new group to collection 'groups' with ID: ${group.groupId}")
         val db = FirebaseFirestore.getInstance()
         try {
-            db.collection("groups").document(group.groupId).set(group, SetOptions.merge()).await()
-            Log.d(TAG, "createGroup: Successfully created/merged group: ${group.groupId}")
+            val participantsList = group.members.split(",").filter { it.isNotEmpty() }
+            val groupMap = hashMapOf(
+                "groupId" to group.groupId,
+                "name" to group.name,
+                "createdBy" to group.createdBy,
+                "ownerId" to group.createdBy,
+                "createdAt" to group.createdAt,
+                "members" to group.members,
+                "participants" to participantsList,
+                "currentGroupKeyGeneration" to group.currentGroupKeyGeneration,
+                "defaultSelfDestructSeconds" to group.defaultSelfDestructSeconds,
+                "description" to group.description,
+                "pinnedMessageId" to group.pinnedMessageId,
+                "pinnedMessageText" to group.pinnedMessageText,
+                "bannedMembers" to group.bannedMembers
+            )
+            db.collection("groups").document(group.groupId).set(groupMap, SetOptions.merge()).await()
+            Log.d("VoidFirestore", "createGroup: Successfully wrote group document of ID: ${group.groupId}")
         } catch (e: Exception) {
-            Log.e(TAG, "createGroup failed: ${e.message}", e)
+            Log.e("VoidFirestore", "createGroup: FAILED to write group document of ID: ${group.groupId} due to ${e.message}", e)
             throw e
         }
     }
@@ -282,9 +314,20 @@ object FirestoreManager {
         Log.d(TAG, "sendGroupMessage: Transmitting group message. groupId = $groupId, messageId = ${message.messageId}")
         val db = FirebaseFirestore.getInstance()
         try {
+            val messageMap = hashMapOf(
+                "messageId" to message.messageId,
+                "groupId" to message.groupId,
+                "senderId" to message.senderId,
+                "encryptedPayload" to message.encryptedPayload,
+                "iv" to message.iv,
+                "keyGeneration" to message.keyGeneration,
+                "timestamp" to message.timestamp,
+                "selfDestructSeconds" to message.selfDestructSeconds,
+                "destroyed" to message.destroyed
+            )
             db.collection("groups").document(groupId)
                 .collection("messages").document(message.messageId)
-                .set(message, SetOptions.merge()).await()
+                .set(messageMap, SetOptions.merge()).await()
             Log.d(TAG, "sendGroupMessage: Successfully wrote message ${message.messageId} to subcollection.")
         } catch (e: Exception) {
             Log.e(TAG, "sendGroupMessage failed: ${e.message}", e)
@@ -357,7 +400,11 @@ object FirestoreManager {
                                 createdAt = doc.getLong("createdAt") ?: 0L,
                                 members = doc.getString("members") ?: "",
                                 currentGroupKeyGeneration = doc.getLong("currentGroupKeyGeneration")?.toInt() ?: 1,
-                                defaultSelfDestructSeconds = doc.getLong("defaultSelfDestructSeconds")?.toInt() ?: 0
+                                defaultSelfDestructSeconds = doc.getLong("defaultSelfDestructSeconds")?.toInt() ?: 0,
+                                description = doc.getString("description") ?: "",
+                                pinnedMessageId = doc.getString("pinnedMessageId") ?: "",
+                                pinnedMessageText = doc.getString("pinnedMessageText") ?: "",
+                                bannedMembers = doc.getString("bannedMembers") ?: ""
                             )
                         } catch (e: Exception) {
                             null
@@ -372,42 +419,82 @@ object FirestoreManager {
     suspend fun createInviteLink(groupId: String, invite: InviteLink): String {
         Log.d(TAG, "createInviteLink: Creating invite link code under group: $groupId")
         val db = FirebaseFirestore.getInstance()
+        val inviteMap = hashMapOf(
+            "linkId" to invite.linkId,
+            "encryptedGroupKey" to invite.encryptedGroupKey,
+            "inviteKeyBase64" to invite.inviteKeyBase64,
+            "createdBy" to invite.createdBy,
+            "createdAt" to invite.createdAt,
+            "expiresAt" to invite.expiresAt,
+            "maxUses" to invite.maxUses,
+            "currentUses" to invite.currentUses,
+            "active" to invite.active
+        )
         db.collection("groups").document(groupId)
             .collection("invites").document(invite.linkId)
-            .set(invite, SetOptions.merge()).await()
+            .set(inviteMap, SetOptions.merge()).await()
         return "void://group/$groupId/${invite.linkId}"
     }
 
     suspend fun joinGroup(groupId: String, member: GroupMember) {
-        Log.d(TAG, "joinGroup: Joining member ${member.displayId} to group $groupId")
+        Log.d("VoidFirestore", "joinGroup: Joining member ${member.displayId} to group $groupId")
         val db = FirebaseFirestore.getInstance()
-        db.collection("groups").document(groupId)
-            .collection("members").document(member.displayId)
-            .set(member, SetOptions.merge()).await()
-        
-        // Update members list string if necessary, or let it merge
-        val groupDoc = db.collection("groups").document(groupId).get().await()
-        if (groupDoc.exists()) {
-            val membersStr = groupDoc.getString("members") ?: ""
-            if (!membersStr.contains(member.displayId)) {
-                val updatedMembers = if (membersStr.isEmpty()) member.displayId else "$membersStr,${member.displayId}"
-                db.collection("groups").document(groupId).update("members", updatedMembers).await()
+        try {
+            val memberMap = hashMapOf(
+                "displayId" to member.displayId,
+                "publicKeyBase64" to member.publicKeyBase64,
+                "role" to member.role,
+                "joinedAt" to member.joinedAt
+            )
+            db.collection("groups").document(groupId)
+                .collection("members").document(member.displayId)
+                .set(memberMap, SetOptions.merge()).await()
+            Log.d("VoidFirestore", "joinGroup: Successfully set member document for ${member.displayId}")
+            
+            // Update members list string and participants array
+            val groupDoc = db.collection("groups").document(groupId).get().await()
+            if (groupDoc.exists()) {
+                val membersStr = groupDoc.getString("members") ?: ""
+                if (!membersStr.contains(member.displayId)) {
+                    val updatedMembers = if (membersStr.isEmpty()) member.displayId else "$membersStr,${member.displayId}"
+                    val participantsList = updatedMembers.split(",").filter { it.isNotEmpty() }
+                    db.collection("groups").document(groupId).update(
+                        "members", updatedMembers,
+                        "participants", participantsList
+                    ).await()
+                    Log.d("VoidFirestore", "joinGroup: Updated group doc '$groupId' members and participants array: $participantsList")
+                }
             }
+        } catch (e: Exception) {
+            Log.e("VoidFirestore", "joinGroup: FAILED to join member ${member.displayId} to group $groupId: ${e.message}", e)
+            throw e
         }
     }
 
     suspend fun leaveGroup(groupId: String, userDisplayId: String) {
-        Log.d(TAG, "leaveGroup: Removing member $userDisplayId from group $groupId")
+        Log.d("VoidFirestore", "leaveGroup: Removing member $userDisplayId from group $groupId")
         val db = FirebaseFirestore.getInstance()
-        db.collection("groups").document(groupId)
-            .collection("members").document(userDisplayId)
-            .delete().await()
+        try {
+            db.collection("groups").document(groupId)
+                .collection("members").document(userDisplayId)
+                .delete().await()
+            Log.d("VoidFirestore", "leaveGroup: Deleted member document of $userDisplayId in group $groupId")
 
-        val groupDoc = db.collection("groups").document(groupId).get().await()
-        if (groupDoc.exists()) {
-            val membersStr = groupDoc.getString("members") ?: ""
-            val list = membersStr.split(",").filter { it != userDisplayId }
-            db.collection("groups").document(groupId).update("members", list.joinToString(",")).await()
+            val groupDoc = db.collection("groups").document(groupId).get().await()
+            if (groupDoc.exists()) {
+                val membersStr = groupDoc.getString("members") ?: ""
+                val list = membersStr.split(",").filter { it != userDisplayId }
+                val updatedMembers = list.joinToString(",")
+                val participantsList = list.filter { it.isNotEmpty() }
+                db.collection("groups").document(groupId).update(
+                    "members", updatedMembers,
+                    "participants", participantsList
+                ).await()
+                Log.d("VoidFirestore", "leaveGroup: Updated group doc '$groupId' removed $userDisplayId. New participants list: $participantsList")
+            }
+        } catch (e: Exception) {
+            Log.e("VoidFirestore", "leaveGroup: FAILED to remove user $userDisplayId from group $groupId: ${e.message}", e)
+            throw e
         }
     }
 
@@ -608,5 +695,168 @@ object FirestoreManager {
             throw e
         }
         return chatId
+    }
+
+    suspend fun deleteChatForEveryone(chatId: String, displayId: String) {
+        Log.d(TAG, "deleteChatForEveryone: Deleting chatId=$chatId globally")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            db.collection("chats").document(chatId).update(
+                mapOf(
+                    "deleted" to true,
+                    "deletedBy" to displayId,
+                    "deletedAt" to System.currentTimeMillis()
+                )
+            ).await()
+            Log.d(TAG, "deleteChatForEveryone: Successfully flagged chat $chatId as deleted")
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteChatForEveryone failed: ${e.message}", e)
+            throw e
+        }
+    }
+
+    suspend fun markAllMessagesDestroyed(chatId: String) {
+        Log.d(TAG, "markAllMessagesDestroyed: Destroying all messages for chatId=$chatId")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            val messagesRef = db.collection("chats").document(chatId).collection("messages")
+            val snapshot = messagesRef.get().await()
+            val batch = db.batch()
+            for (doc in snapshot.documents) {
+                batch.update(doc.reference, "destroyed", true)
+            }
+            batch.commit().await()
+            Log.d(TAG, "markAllMessagesDestroyed: Successfully committed batch destruction for chatId=$chatId")
+        } catch (e: Exception) {
+            Log.e(TAG, "markAllMessagesDestroyed failed: ${e.message}", e)
+            throw e
+        }
+    }
+
+    fun listenForChatDeletion(chatId: String): Flow<Boolean> = callbackFlow {
+        Log.d(TAG, "listenForChatDeletion: Listening for deletion status of chatId=$chatId")
+        val db = FirebaseFirestore.getInstance()
+        val listener = db.collection("chats").document(chatId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val deleted = snapshot.getBoolean("deleted") ?: false
+                    trySend(deleted)
+                } else {
+                    trySend(false)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun hasActiveMessages(chatId: String): Boolean {
+        val db = FirebaseFirestore.getInstance()
+        return try {
+            val snapshot = db.collection("chats").document(chatId)
+                .collection("messages")
+                .whereEqualTo("destroyed", false)
+                .limit(1)
+                .get()
+                .await()
+            !snapshot.isEmpty
+        } catch (e: Exception) {
+            Log.e(TAG, "hasActiveMessages failed for $chatId: ${e.message}", e)
+            true
+        }
+    }
+
+    suspend fun submitTicket(ticket: SupportTicket) {
+        Log.d("VoidFirestore", "submitTicket: Writing ticket with ID = ${ticket.ticketId}")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            db.collection("tickets").document(ticket.ticketId).set(ticket, SetOptions.merge()).await()
+            Log.d("VoidFirestore", "submitTicket: Successfully submitted ticket ${ticket.ticketId}")
+        } catch (e: Exception) {
+            Log.e("VoidFirestore", "submitTicket failed: ${e.message}", e)
+            throw e
+        }
+    }
+
+    fun getUserTickets(displayId: String): Flow<List<SupportTicket>> = callbackFlow {
+        Log.d("VoidFirestore", "getUserTickets: Subscribing to tickets for user: $displayId")
+        val db = FirebaseFirestore.getInstance()
+        val listener = db.collection("tickets")
+            .whereEqualTo("displayId", displayId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VoidFirestore", "getUserTickets failure: ${error.message}", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            val repliesRaw = doc.get("replies") as? List<Map<String, Any>> ?: emptyList()
+                            val repliesList = repliesRaw.map { repMap ->
+                                SupportTicketReply(
+                                    replyId = repMap["replyId"]?.toString() ?: "",
+                                    senderId = repMap["senderId"]?.toString() ?: "",
+                                    message = repMap["message"]?.toString() ?: "",
+                                    createdAt = (repMap["createdAt"] as? Number)?.toLong() ?: 0L
+                                )
+                            }
+                            SupportTicket(
+                                ticketId = doc.id,
+                                displayId = doc.getString("displayId") ?: "",
+                                username = doc.getString("username") ?: "",
+                                subject = doc.getString("subject") ?: "",
+                                message = doc.getString("message") ?: "",
+                                deviceInfo = doc.getString("deviceInfo") ?: "",
+                                status = doc.getString("status") ?: "open",
+                                createdAt = doc.getLong("createdAt") ?: 0L,
+                                replies = repliesList
+                            )
+                        } catch (e: Exception) {
+                            Log.e("VoidFirestore", "getUserTickets parsing error: ${e.message}", e)
+                            null
+                        }
+                    }.sortedByDescending { it.createdAt }
+                    Log.d("VoidFirestore", "getUserTickets: Emitting tickets count: ${list.size}")
+                    trySend(list)
+                }
+            }
+        awaitClose {
+            Log.d("VoidFirestore", "getUserTickets: unsubscribe")
+            listener.remove()
+        }
+    }
+
+    fun getTicketReplies(ticketId: String): Flow<List<SupportTicketReply>> = callbackFlow {
+        Log.d("VoidFirestore", "getTicketReplies: Subscribing to replies for ticket: $ticketId")
+        val db = FirebaseFirestore.getInstance()
+        val listener = db.collection("tickets").document(ticketId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VoidFirestore", "getTicketReplies failed: ${error.message}", error)
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val repliesRaw = snapshot.get("replies") as? List<Map<String, Any>> ?: emptyList()
+                    val repliesList = repliesRaw.map { repMap ->
+                        SupportTicketReply(
+                            replyId = repMap["replyId"]?.toString() ?: "",
+                            senderId = repMap["senderId"]?.toString() ?: "",
+                            message = repMap["message"]?.toString() ?: "",
+                            createdAt = (repMap["createdAt"] as? Number)?.toLong() ?: 0L
+                        )
+                    }
+                    Log.d("VoidFirestore", "getTicketReplies: Emitting replies count: ${repliesList.size}")
+                    trySend(repliesList)
+                } else {
+                    trySend(emptyList())
+                }
+            }
+        awaitClose {
+            listener.remove()
+        }
     }
 }

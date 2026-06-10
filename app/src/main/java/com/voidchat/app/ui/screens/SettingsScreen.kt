@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,10 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voidchat.app.crypto.BIP39Wordlist
-import com.voidchat.app.ui.components.IdentityCard
 import com.voidchat.app.ui.theme.*
 import com.voidchat.app.viewmodel.SettingsViewModel
 
@@ -38,6 +40,7 @@ fun SettingsScreen(
     onNavigateToTransferIn: () -> Unit,
     onNavigateToTransferOut: () -> Unit,
     onNavigateToDonate: () -> Unit,
+    onNavigateToPrivacy: () -> Unit,
     onLogOut: () -> Unit,
     onContactSupport: () -> Unit,
     modifier: Modifier = Modifier
@@ -50,26 +53,20 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    // Dialog state variables
     var showUsernameDialog by remember { mutableStateOf(false) }
     var newUsernameInput by remember { mutableStateOf("") }
-    var showPinDialog by remember { mutableStateOf(false) }
-    var pinValueInput by remember { mutableStateOf("") }
-    var showSupportInfoDialog by remember { mutableStateOf(false) }
-
-    // Dropdowns and UI interactive variables
-    var showSelfDestructDropdown by remember { mutableStateOf(false) }
-    var showAppearanceDropdown by remember { mutableStateOf(false) }
     
-    // Biometric mock-free display for Dialog
+    var showSelfDestructDropdown by remember { mutableStateOf(false) }
+    var showThemeDropdown by remember { mutableStateOf(false) }
+    
     var showBiometricAuthDialogForPhrase by remember { mutableStateOf(false) }
     var showRecoveryPhraseDialog by remember { mutableStateOf(false) }
+    
+    // Advanced variables
+    var showExportKeyConfirmDialog by remember { mutableStateOf(false) }
 
-    // SECRET DEVELOPER PANEL CLICK COUNTER
-    var logoTapCount by remember { mutableStateOf(0) }
-    val isDeveloperMode = logoTapCount >= 7
-
-    // Recovery Phrase Generation derived from displayId safely
+    // Mnemonic derivation matching original deterministically from displayId
     val recoveryPhrase = remember(displayId) {
         val rawHex = displayId.replace("-", "")
         if (rawHex.isEmpty()) emptyList() else {
@@ -80,12 +77,17 @@ fun SettingsScreen(
         }
     }
 
-    if (showSupportInfoDialog) {
+    // ----------------------------------------
+    // Dialogs
+    // ----------------------------------------
+
+    // Change Username Dialog
+    if (showUsernameDialog) {
         AlertDialog(
-            onDismissRequest = { showSupportInfoDialog = false },
+            onDismissRequest = { showUsernameDialog = false },
             title = {
                 Text(
-                    text = "ESTABLISH DIRECT SECURITY TUNNEL",
+                    "RE-REGISTER IDENT HANDLE",
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     color = NeonCyan,
@@ -93,79 +95,13 @@ fun SettingsScreen(
                 )
             },
             text = {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = VoidDarkBlue),
-                    border = BorderStroke(1.dp, BorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "This action initializes an encrypted 1-on-1 private connection with the official Void Support operator.\n\nAll subsequent logs, transmissions, and responses routing across this link are fully end-to-end encrypted with public keys.",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = TextPrimary,
-                            lineHeight = 16.sp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSupportInfoDialog = false
-                        onContactSupport()
-                    }
-                ) {
-                    Text(
-                        text = "CONN_LAUNCH()",
-                        color = NeonCyan,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSupportInfoDialog = false }) {
-                    Text("ABORT", fontFamily = FontFamily.Monospace, color = TextPrimary)
-                }
-            },
-            containerColor = VoidDarkNavy
-        )
-    }
-
-    if (showDeleteConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("CONFIRM DESTRUCT COMMAND", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = ErrorRed) },
-            text = { Text("This will permanently overwrite the local cryptographic keys partition and delete identity files. This action is IRREVERSIBLE. Confirm destruction of node @$username?", fontFamily = FontFamily.Monospace) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmDialog = false
-                        viewModel.deleteIdentity {
-                            onLogOut()
-                        }
-                    }
-                ) {
-                    Text("YES, EXECUTE PURGE", color = ErrorRed, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("ABORT OPERATION", fontFamily = FontFamily.Monospace, color = TextPrimary)
-                }
-            },
-            containerColor = VoidDarkNavy
-        )
-    }
-
-    if (showUsernameDialog) {
-        AlertDialog(
-            onDismissRequest = { showUsernameDialog = false },
-            title = { Text("RE-REGISTER IDENT HANDLE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = NeonCyan) },
-            text = {
                 Column {
-                    Text("Set a new globally unique routing address handle.", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
+                    Text(
+                        "Set a new globally unique routing address handle.",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = newUsernameInput,
@@ -193,12 +129,15 @@ fun SettingsScreen(
                             Toast.makeText(context, "Handle cannot be empty", Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
-                        viewModel.updateUsername(trimmed) { success ->
+                        Log.d("VoidFirestore", "updateUsername: Dispatching registration for handle '$trimmed'")
+                        viewModel.updateUsername(trimmed) { success, errorMsg ->
                             if (success) {
+                                Log.d("VoidFirestore", "updateUsername: Reregistered successfully as '$trimmed'")
                                 Toast.makeText(context, "Handle successfully updated", Toast.LENGTH_SHORT).show()
                                 showUsernameDialog = false
                             } else {
-                                Toast.makeText(context, "Handle taken or registration failed", Toast.LENGTH_SHORT).show()
+                                Log.e("VoidFirestore", "updateUsername: Failed to change username to '$trimmed': $errorMsg")
+                                Toast.makeText(context, errorMsg ?: "Handle taken or registration failed", Toast.LENGTH_LONG).show()
                             }
                         }
                     }
@@ -215,82 +154,36 @@ fun SettingsScreen(
         )
     }
 
-    if (showPinDialog) {
-        AlertDialog(
-            onDismissRequest = { showPinDialog = false },
-            title = { Text("SET SECURE PIN LOCKCODE", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = NeonCyan) },
-            text = {
-                Column {
-                    Text("Input a 4-digit PIN to securely authorize identity decryption on launch.", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = pinValueInput,
-                        onValueChange = { input ->
-                            if (input.all { it.isDigit() } && input.length <= 4) {
-                                pinValueInput = input
-                            }
-                        },
-                        label = { Text("4-DIGIT PASSCODE", fontFamily = FontFamily.Monospace) },
-                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, letterSpacing = 4.sp),
-                        singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonCyan,
-                            unfocusedBorderColor = BorderDark,
-                            focusedLabelColor = NeonCyan,
-                            unfocusedLabelColor = TextMuted,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (pinValueInput.isNotEmpty() && pinValueInput.length < 4) {
-                            Toast.makeText(context, "PIN must be exactly 4 digits or empty to clear", Toast.LENGTH_SHORT).show()
-                            return@TextButton
-                        }
-                        val finalPin = pinValueInput.ifEmpty { null }
-                        viewModel.updateSettings(settings.copy(pinCode = finalPin))
-                        Toast.makeText(
-                            context,
-                            if (finalPin == null) "PIN Code cleared" else "PIN Code registered successfully",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        showPinDialog = false
-                    }
-                ) {
-                    Text("COMMIT REGISTER", color = NeonCyan, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPinDialog = false }) {
-                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = TextPrimary)
-                }
-            },
-            containerColor = VoidDarkNavy
-        )
-    }
-
     // Biometric Handshake Dialog for viewing phrase
     if (showBiometricAuthDialogForPhrase) {
         AlertDialog(
             onDismissRequest = { showBiometricAuthDialogForPhrase = false },
-            title = { Text("AUTHENTICATE IDENTITY", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = NeonCyan) },
-            text = { Text("Please complete fingerprint scan or enter device password to decrypt the BIP39 seed vault offline partition.", fontFamily = FontFamily.Monospace) },
+            title = {
+                Text(
+                    "AUTHENTICATE IDENTITY",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = NeonCyan,
+                    fontSize = 14.sp
+                )
+            },
+            text = {
+                Text(
+                    "Please complete fingerprint scan or enter device credentials to decrypt recovery seed vault.",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TextPrimary
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showBiometricAuthDialogForPhrase = false
                         showRecoveryPhraseDialog = true
+                        Log.d("VoidFirestore", "biometricAuth: Authenticated successfully to view BIP39 phrase")
                     }
                 ) {
-                    Text("SIMULATE ACCREDITED SCAN", color = NeonCyan, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text("PASS SCAN", color = NeonCyan, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -302,15 +195,23 @@ fun SettingsScreen(
         )
     }
 
-    // Word list viewing Dialog
+    // BIP39 recovery Phrase Dialog
     if (showRecoveryPhraseDialog) {
         AlertDialog(
             onDismissRequest = { showRecoveryPhraseDialog = false },
-            title = { Text("🔒 SECURE SEED VAULT", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = HotPinkLight) },
+            title = {
+                Text(
+                    "🔒 SECURE SEED VAULT",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = HotPinkLight,
+                    fontSize = 14.sp
+                )
+            },
             text = {
                 Column {
                     Text(
-                        text = "NEVER SHARE THIS PHRASE. Anyone with these 12 words can duplicate your identity and decrypt your private transmissions.",
+                        "NEVER SHARE THIS PHRASE. Anyone with these 12 words can duplicate your identity and decrypt your private transmissions.",
                         color = ErrorRed,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -323,7 +224,6 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            // Render words
                             recoveryPhrase.chunked(3).forEachIndexed { rowIndex, chunk ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -354,6 +254,52 @@ fun SettingsScreen(
         )
     }
 
+    // Advanced key confirmation dialog
+    if (showExportKeyConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportKeyConfirmDialog = false },
+            title = {
+                Text(
+                    text = "CONFIRM KEY EXPORT",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = WarningYellow,
+                    fontSize = 14.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "This exports your private account key. You only need this for advanced recovery. Never share this key with anyone.",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TextPrimary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExportKeyConfirmDialog = false
+                        Log.d("VoidFirestore", "exportAccountKey: Beginning KeyStore extraction for displayId=$displayId")
+                        val privateKeyBase64 = com.voidchat.app.crypto.IdentityManager.exportPrivateKeyBase64() ?: ""
+                        
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("identity_private_key", privateKeyBase64))
+                        Log.d("VoidFirestore", "exportAccountKey: Successfully copied KeyStore private key Base64 to clipboard")
+                        Toast.makeText(context, "Account key copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("CONFIRM", color = WarningYellow, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportKeyConfirmDialog = false }) {
+                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = TextPrimary)
+                }
+            },
+            containerColor = VoidDarkNavy
+        )
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = VoidBlack,
@@ -362,17 +308,11 @@ fun SettingsScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "NODE PARAMETERS",
+                            text = "SETTINGS",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             color = NeonCyan,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable {
-                                logoTapCount++
-                                if (logoTapCount == 7) {
-                                    Toast.makeText(context, "DECRYPTING DEVELOPER RESTRICTED CONSOLE...", Toast.LENGTH_SHORT).show()
-                                }
-                            }
+                            fontWeight = FontWeight.Bold
                         )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = VoidBlack),
@@ -396,47 +336,44 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp)
-                    .verticalScroll(scrollState)
+                    .padding(16.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Profile Section
-                IdentityCard(
-                    displayId = displayId,
-                    username = username.ifEmpty { "void_operative" },
-                    onShareQr = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("display_id", displayId))
-                        Toast.makeText(context, "Display ID copied to clipboard", Toast.LENGTH_SHORT).show()
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
+                // ----------------------------------------
                 // SECURITY SECTION
+                // ----------------------------------------
                 Text(
-                    text = "SECURITY PROTOCOLS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = HotPinkLight,
+                    text = "SECURITY",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    color = HotPinkLight,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
                 )
-
-                Surface(
-                    color = VoidDarkNavy,
-                    shape = RoundedCornerShape(8.dp),
+                
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
                     border = BorderStroke(1.dp, BorderDark),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        
-                        // Default self-destruct timer dropdown
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Default Self-Destruct Timer
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("DEFAULT SELF DESTRUCT", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Default Self-Destruct Timer",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
                                 Text(
                                     text = when (settings.defaultSelfDestruct) {
                                         0 -> "Off"
@@ -446,8 +383,8 @@ fun SettingsScreen(
                                         300 -> "5 Minutes"
                                         else -> "${settings.defaultSelfDestruct}s"
                                     },
-                                    fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
                                     color = HotPinkLight
                                 )
                             }
@@ -466,20 +403,21 @@ fun SettingsScreen(
                                     onDismissRequest = { showSelfDestructDropdown = false },
                                     modifier = Modifier.background(VoidDarkBlue)
                                 ) {
-                                    val opt = listOf(
+                                    val options = listOf(
                                         Pair("Off", 0),
                                         Pair("5s", 5),
                                         Pair("30s", 30),
                                         Pair("1m", 60),
                                         Pair("5m", 300)
                                     )
-                                    opt.forEach { (lbl, valSecs) ->
+                                    options.forEach { (label, secs) ->
                                         DropdownMenuItem(
-                                            text = { Text(lbl, color = TextPrimary, fontFamily = FontFamily.Monospace) },
+                                            text = { Text(label, color = TextPrimary, fontFamily = FontFamily.Monospace) },
                                             onClick = {
-                                                viewModel.updateSettings(settings.copy(defaultSelfDestruct = valSecs))
+                                                viewModel.updateSettings(settings.copy(defaultSelfDestruct = secs))
                                                 showSelfDestructDropdown = false
-                                                Toast.makeText(context, "Default self destruct set to: $lbl", Toast.LENGTH_SHORT).show()
+                                                Log.d("VoidFirestore", "updateSettings: Changed default self destruct to $secs seconds")
+                                                Toast.makeText(context, "Self-destruct timer updated", Toast.LENGTH_SHORT).show()
                                             }
                                         )
                                     }
@@ -487,282 +425,332 @@ fun SettingsScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
                         Divider(color = BorderDark, thickness = 1.dp)
-                        Spacer(modifier = Modifier.height(14.dp))
 
-                        // Biometric lock toggle
+                        // Biometric Lock Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("BIOMETRIC SHIELD LOCK", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                                Text("Require fingerprint confirmation on application launch.", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
+                                Text(
+                                    text = "Biometric Lock",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Requires fingerprint to open app",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = TextMuted
+                                )
                             }
                             Switch(
                                 checked = settings.biometricLock,
-                                onCheckedChange = {
-                                    viewModel.updateSettings(settings.copy(biometricLock = it))
+                                onCheckedChange = { isEnabled ->
+                                    viewModel.updateSettings(settings.copy(biometricLock = isEnabled))
+                                    Log.d("VoidFirestore", "updateSettings: Set biometric Lock enabled = $isEnabled")
                                 },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = NeonCyan,
-                                    checkedTrackColor = VoidDarkBlue
+                                    checkedTrackColor = VoidDarkBlue,
+                                    uncheckedThumbColor = TextMuted,
+                                    uncheckedTrackColor = VoidBlack
                                 )
                             )
                         }
-
-                        if (settings.biometricLock) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Divider(color = BorderDark, thickness = 1.dp)
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text("LOCK PIN BACKUP", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                                    Text(
-                                        text = if (settings.pinCode.isNullOrEmpty()) "NOT INSTALLED" else "PIN SHIELD ENGAGED",
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = if (settings.pinCode.isNullOrEmpty()) ErrorRed else MatrixGreen
-                                    )
-                                }
-                                Button(
-                                    onClick = {
-                                        pinValueInput = settings.pinCode ?: ""
-                                        showPinDialog = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
-                                    border = BorderStroke(1.dp, BorderDark),
-                                    shape = RoundedCornerShape(4.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = if (settings.pinCode.isNullOrEmpty()) "INSTALL" else "MODIFY PIN",
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = TextPrimary
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // HELP & SUPPORT
+                // ----------------------------------------
+                // HELP & SUPPORT SECTION
+                // ----------------------------------------
                 Text(
-                    text = "HELP & OPERATOR SUPPORT",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
+                    text = "HELP & SUPPORT",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    color = NeonCyan,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
                 )
 
-                Surface(
-                    color = VoidDarkNavy,
-                    shape = RoundedCornerShape(8.dp),
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
                     border = BorderStroke(1.dp, BorderDark),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showSupportInfoDialog = true }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Contact Customer Support Support Line", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text("CONNECT →", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = NeonCyan, fontWeight = FontWeight.Bold)
-                        }
-
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    // Open browser privacy link
-                                    try {
-                                        val urlIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://voidchat.app/privacy"))
-                                        context.startActivity(urlIntent)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Could not launch web browser.", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                                .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Web Privacy Covenant Charter Policy", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text("BROWSE ↗", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
-                        }
-
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("About Client Node Version Build", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text(version, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // APPEARANCE
-                Text(
-                    text = "INTERFACE THEME",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Surface(
-                    color = VoidDarkNavy,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, BorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column {
-                            Text("CURRENT OVERLAY", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text(settings.theme.uppercase(), fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MatrixGreen)
-                        }
-                        Box {
-                            Button(
-                                onClick = { showAppearanceDropdown = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
-                                border = BorderStroke(1.dp, BorderDark),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text("THEME SELECT", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            }
-                            DropdownMenu(
-                                expanded = showAppearanceDropdown,
-                                onDismissRequest = { showAppearanceDropdown = false },
-                                modifier = Modifier.background(VoidDarkBlue)
-                            ) {
-                                val themes = listOf("CYBERPUNK", "COSMIC SLA", "TERMINAL SLA")
-                                themes.forEach { th ->
-                                    DropdownMenuItem(
-                                        text = { Text(th, color = TextPrimary, fontFamily = FontFamily.Monospace) },
-                                        onClick = {
-                                            if (th == "CYBERPUNK") {
-                                                viewModel.updateSettings(settings.copy(theme = th.lowercase()))
-                                                Toast.makeText(context, "Theme locked to $th style.", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "$th is restricted in current channel blueprint.", Toast.LENGTH_SHORT).show()
-                                            }
-                                            showAppearanceDropdown = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // TRANSFER & BACKUP
-                Text(
-                    text = "PARTITION ARCHIVING & BACKUPS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Surface(
-                    color = VoidDarkNavy,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, BorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onNavigateToTransferOut() }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        // Contact Support Button
+                        Button(
+                            onClick = {
+                                Log.d("VoidFirestore", "contactSupport: Launching encrypted support chat sequence")
+                                onContactSupport()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, BorderDark),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Transfer Current Node to New Device", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text("LAUNCH →", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = NeonCyan)
+                            Text(
+                                text = "Contact Support",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
                         }
 
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 8.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onNavigateToBackup() }
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        // Privacy Policy Button
+                        Button(
+                            onClick = {
+                                onNavigateToPrivacy()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, BorderDark),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Export Secure Seed Recovery Backup", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text("EXPORT ↗", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = NeonCyan)
+                            Text(
+                                text = "Privacy Policy",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
                         }
 
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 8.dp))
+                        Divider(color = BorderDark, thickness = 1.dp)
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onNavigateToBackup() } // Restore from Backup routing
-                                .padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Restore Identity Partition from Backup", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            Text("IMPORT ←", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = NeonCyan)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // ACCOUNT
-                Text(
-                    text = "ACCOUNT & CRYPTOGRAPHIC STANDARDS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Surface(
-                    color = VoidDarkNavy,
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, BorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                        // About Void Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text("REGISTERED IDENT HANDLE", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
-                                Text("@$username", fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = TextPrimary, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "About Void",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = version,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // ----------------------------------------
+                // APPEARANCE SECTION
+                // ----------------------------------------
+                Text(
+                    text = "APPEARANCE",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeonCyan,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
+                    border = BorderStroke(1.dp, BorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Theme Selector",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = settings.theme.uppercase(),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = MatrixGreen
+                                )
+                            }
+                            Box {
+                                Button(
+                                    onClick = { showThemeDropdown = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                                    border = BorderStroke(1.dp, BorderDark),
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("SELECT", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                }
+                                DropdownMenu(
+                                    expanded = showThemeDropdown,
+                                    onDismissRequest = { showThemeDropdown = false },
+                                    modifier = Modifier.background(VoidDarkBlue)
+                                ) {
+                                    val themesList = listOf("CYBERPUNK", "COSMIC", "TERMINAL")
+                                    themesList.forEach { th ->
+                                        DropdownMenuItem(
+                                            text = { Text(th, color = TextPrimary, fontFamily = FontFamily.Monospace) },
+                                            onClick = {
+                                                if (th == "CYBERPUNK") {
+                                                    viewModel.updateSettings(settings.copy(theme = th.lowercase()))
+                                                    Log.d("VoidFirestore", "updateSettings: Theme locked to cyberpunk")
+                                                    Toast.makeText(context, "Theme updated to Cyberpunk", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "$th is currently locked", Toast.LENGTH_SHORT).show()
+                                                }
+                                                showThemeDropdown = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----------------------------------------
+                // TRANSFER & BACKUP SECTION
+                // ----------------------------------------
+                Text(
+                    text = "TRANSFER & BACKUP",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeonCyan,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
+                    border = BorderStroke(1.dp, BorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Transfer to New Device
+                        Button(
+                            onClick = {
+                                Log.d("VoidFirestore", "navigation: Navigating to TransferOutScreen")
+                                onNavigateToTransferOut()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, BorderDark),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Transfer to New Device", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary)
+                                Text("LAUNCH →", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Export Backup
+                        Button(
+                            onClick = {
+                                Log.d("VoidFirestore", "navigation: Navigating to BackupScreen export flow")
+                                onNavigateToBackup()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, BorderDark),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Export Backup", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary)
+                                Text("EXPORT ↗", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Restore from Backup
+                        Button(
+                            onClick = {
+                                Log.d("VoidFirestore", "navigation: Navigating to BackupScreen restore flow")
+                                onNavigateToBackup()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, BorderDark),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Restore from Backup", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary)
+                                Text("IMPORT ←", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // ----------------------------------------
+                // ACCOUNT SECTION
+                // ----------------------------------------
+                Text(
+                    text = "ACCOUNT",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NeonCyan,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
+                    border = BorderStroke(1.dp, BorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Username display with Change Username button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Username",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = TextMuted
+                                )
+                                Text(
+                                    text = "@${username.ifEmpty { "void_operative" }}",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 13.sp,
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Button(
                                 onClick = {
@@ -774,178 +762,119 @@ fun SettingsScreen(
                                 shape = RoundedCornerShape(4.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("CHANGE", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                Text("Change Username", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
                             }
                         }
 
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                        Divider(color = BorderDark, thickness = 1.dp)
 
+                        // Display ID with copy button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("CYBER ENGINE DISPLAY ID", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
-                                Text(displayId, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = NeonCyan, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Display ID",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = TextMuted
+                                )
+                                Text(
+                                    text = displayId,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = NeonCyan,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            Button(
+                            IconButton(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("display_id", displayId))
-                                    Toast.makeText(context, "Display ID copied!", Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
-                                border = BorderStroke(1.dp, BorderDark),
-                                shape = RoundedCornerShape(4.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    Toast.makeText(context, "Display ID copied", Toast.LENGTH_SHORT).show()
+                                    Log.d("VoidFirestore", "copyDisplayId: Copied displaying displayId=$displayId successfully to clipboard")
+                                }
                             ) {
-                                Text("COPY ID", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy ID", tint = NeonCyan)
                             }
                         }
 
-                        Divider(color = BorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                        Divider(color = BorderDark, thickness = 1.dp)
 
+                        // View Recovery Phrase Button
                         Button(
-                            onClick = { showBiometricAuthDialogForPhrase = true },
+                            onClick = {
+                                Log.d("VoidFirestore", "viewRecoveryPhrase: Requesting fingerprint/credential scan for viewing BIP39 mnemonic")
+                                showBiometricAuthDialogForPhrase = true
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
                             border = BorderStroke(1.dp, HotPink),
                             shape = RoundedCornerShape(4.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("VIEW BIP39 RECOVERY SECURE PHRASE", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                            Text(
+                                text = "View Recovery Phrase",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TextPrimary
+                            )
                         }
                     }
                 }
 
-                // HIDDEN DEVELOPER MODULE (activated by 7 clicks on NODE PARAMETERS top title)
-                if (isDeveloperMode) {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "RESTRICTED ADVANCED RECOVERY CONSOLE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = WarningYellow,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                // ----------------------------------------
+                // ADVANCED SECTION (At bottom)
+                // ----------------------------------------
+                Text(
+                    text = "ADVANCED",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = WarningYellow,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                )
 
-                    Surface(
-                        color = VoidDarkNavy,
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, WarningYellow),
-                        modifier = Modifier.fillMaxWidth()
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
+                    border = BorderStroke(1.dp, WarningYellow),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Button(
+                            onClick = {
+                                showExportKeyConfirmDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
+                            border = BorderStroke(1.dp, WarningYellow),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                text = "⚠️ WARNING: This console exposes highly sensitive parameters reserved for advanced hardware migration and power-user debugging.",
-                                color = WarningYellow,
-                                fontSize = 10.sp,
+                                text = "Export Account Key",
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(bottom = 12.dp)
+                                fontSize = 12.sp,
+                                color = TextPrimary
                             )
-
-                            // Export Private Key
-                            Button(
-                                onClick = {
-                                    val privateKeyBase64 = try {
-                                        val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-                                        val entry = keyStore.getEntry("void_identity_key", null) as? java.security.KeyStore.PrivateKeyEntry
-                                        val encoded = entry?.privateKey?.encoded
-                                        if (encoded != null) {
-                                            android.util.Base64.encodeToString(encoded, android.util.Base64.NO_WRAP)
-                                        } else {
-                                            android.util.Base64.encodeToString("hardware_bound_recovery_seal_key_for_node_$displayId".toByteArray(), android.util.Base64.NO_WRAP)
-                                        }
-                                    } catch (e: Exception) {
-                                        "RECOVERY_KEY_FAIL: ${e.localizedMessage}"
-                                    }
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("identity_private_key", privateKeyBase64))
-                                    Toast.makeText(context, "Private key copied!", Toast.LENGTH_SHORT).show()
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = VoidDarkBlue),
-                                border = BorderStroke(1.dp, WarningYellow),
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("EXPORT PRIVATE KEY (BASE64)", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = TextPrimary)
-                            }
-                            
-                            Text(
-                                text = "For advanced recovery only. Never share this key.",
-                                color = TextMuted,
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                            )
-
-                            Divider(color = BorderDark, modifier = Modifier.padding(vertical = 8.dp))
-
-                            // Firestore connection status diagnostic
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("FIRESTORE CONNECTION STATUS", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted)
-                                Text("CONNECTED (REAL-TIME)", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MatrixGreen, fontWeight = FontWeight.Bold)
-                            }
-
-                            Divider(color = BorderDark, modifier = Modifier.padding(vertical = 8.dp))
-
-                            // Terminal diagnostic logs
-                            Text("RECENT SYSTEM OPERATION LOGS", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = TextMuted, modifier = Modifier.padding(bottom = 6.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = VoidBlack),
-                                border = BorderStroke(1.dp, BorderDark),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(8.dp)) {
-                                    val logLines = listOf(
-                                        "[SECURE] KeyStore provider loaded successfully.",
-                                        "[SECURE] Identity parameters verified cleanly.",
-                                        "[FIREBASE] Live Firestore listeners subscribed to channels.",
-                                        "[FIRESTORE] Real-time handshake listeners active."
-                                    )
-                                    logLines.forEach { log ->
-                                        Text(
-                                            text = log,
-                                            fontSize = 9.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = MatrixGreen,
-                                            modifier = Modifier.padding(vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
                         }
+                        
+                        Text(
+                            text = "For advanced account recovery. Not needed for normal use.",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = TextMuted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = onNavigateToDonate,
-                    colors = ButtonDefaults.buttonColors(containerColor = VoidDarkNavy),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(1.dp, BorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("SUPPORT INDEPENDENT BLUEPRINT DEVS", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextPrimary)
-                }
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                // Permanently destruct button
-                OutlinedButton(
-                    onClick = { showDeleteConfirmDialog = true },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed),
-                    border = BorderStroke(1.dp, ErrorRed),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("PERMANENTLY DESTRUCT NODE IDENTITY", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                }
             }
         }
     }

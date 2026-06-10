@@ -40,26 +40,47 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun updateUsername(newUsername: String, onComplete: (Boolean) -> Unit) {
+    fun updateUsername(newUsername: String, onComplete: (Boolean, String?) -> Unit) {
         val trimmed = newUsername.trim()
         if (trimmed.isEmpty()) {
-            onComplete(false)
+            onComplete(false, "Handle cannot be empty.")
             return
         }
+        
+        // Add format validation: only alphanumeric + underscores, 3 to 20 chars
+        val allowedRegex = Regex("^[a-zA-Z0-9_]{3,20}$")
+        if (!allowedRegex.matches(trimmed)) {
+            onComplete(false, "Format error: Handle must be 3-20 characters long and contain only alphanumeric characters and underscores (A-Z, 0-9, _).")
+            return
+        }
+
         viewModelScope.launch {
-            val available = FirestoreManager.checkUsernameAvailability(trimmed)
-            if (available) {
-                FirestoreManager.registerUsername(trimmed, _displayId.value)
-                prefs.username = trimmed
-                
-                val currentIdentity = db.identityDao().getIdentity()
-                currentIdentity?.let {
-                    db.identityDao().insertIdentity(it.copy(username = trimmed))
+            try {
+                val available = FirestoreManager.checkUsernameAvailability(trimmed)
+                if (available) {
+                    FirestoreManager.registerUsername(trimmed, _displayId.value)
+                    prefs.username = trimmed
+                    
+                    val currentIdentity = db.identityDao().getIdentity()
+                    currentIdentity?.let {
+                        db.identityDao().insertIdentity(it.copy(username = trimmed))
+                    }
+                    _username.value = trimmed
+                    onComplete(true, null)
+                } else {
+                    onComplete(false, "Handle is already taken.")
                 }
-                _username.value = trimmed
-                onComplete(true)
-            } else {
-                onComplete(false)
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: "Unknown transmission failure"
+                val friendlyMsg = when {
+                    errMsg.contains("PERMISSION_DENIED", ignoreCase = true) -> 
+                        "Security handshake rejected (Firestore PERMISSION_DENIED). Check database permissions."
+                    errMsg.contains("UNAVAILABLE", ignoreCase = true) -> 
+                        "Secure network node unreachable. Check internet connection."
+                    else -> 
+                        "Registration failed: $errMsg"
+                }
+                onComplete(false, friendlyMsg)
             }
         }
     }
