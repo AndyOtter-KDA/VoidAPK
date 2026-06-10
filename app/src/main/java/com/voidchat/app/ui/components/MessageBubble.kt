@@ -82,12 +82,23 @@ fun MessageBubble(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = if (isMine) "ME" else message.senderId.take(9),
-                            color = TextMuted,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isMine) "ME" else message.senderId.take(9),
+                                color = TextMuted,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            if (isMine) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (message.isRead) "✔✔ Read" else "✔ Sent",
+                                    color = if (message.isRead) NeonCyan else TextMuted,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                         
                         if (message.selfDestructSeconds > 0) {
                             SelfDestructIndicator(

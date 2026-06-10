@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -35,12 +36,15 @@ fun HomeScreen(
     onNavigateToJoinChat: () -> Unit,
     onNavigateToCreateGroup: () -> Unit,
     onNavigateToCreateNote: () -> Unit,
+    onNavigateToReadNote: (shareCode: String) -> Unit,
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val chats by viewModel.chats.collectAsState()
     val announcement by viewModel.announcement.collectAsState()
     var showFabMenu by remember { mutableStateOf(false) }
+    var showOpenNoteDialog by remember { mutableStateOf(false) }
+    var openNoteCodeInput by remember { mutableStateOf("") }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -76,26 +80,96 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            Column {
-                Divider(color = BorderDark, thickness = 1.dp)
-                NavigationBar(
-                    containerColor = VoidBlack,
-                    modifier = Modifier.height(64.dp)
+            Surface(
+                color = VoidBlack,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    NavigationBarItem(
-                        selected = true,
-                        onClick = {},
-                        icon = { Icon(Icons.Default.MailOutline, contentDescription = "Chats", tint = NeonCyan) },
-                        label = { Text("CHATS", fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = NeonCyan) },
-                        colors = NavigationBarItemDefaults.colors(indicatorColor = VoidDarkNavy)
-                    )
-                    NavigationBarItem(
-                        selected = false,
-                        onClick = onNavigateToCreateNote,
-                        icon = { Icon(Icons.Default.Share, contentDescription = "Secure Notes", tint = TextMuted) },
-                        label = { Text("NOTES", fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextMuted) },
-                        colors = NavigationBarItemDefaults.colors(indicatorColor = VoidBlack)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { /* Already on Chats */ },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MailOutline,
+                                contentDescription = "Chats",
+                                tint = NeonCyan
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "CHATS",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onNavigateToCreateNote() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Write Note",
+                                tint = TextMuted
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "WRITE NOTE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                color = TextMuted
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { showOpenNoteDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Open Note",
+                                tint = TextMuted
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "OPEN NOTE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                                color = TextMuted
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -144,6 +218,73 @@ fun HomeScreen(
                 .padding(innerPadding)
         ) {
             ScanlineOverlay()
+
+            if (showOpenNoteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showOpenNoteDialog = false },
+                    title = {
+                        Text(
+                            text = "DECRYPT SECURE NOTE",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 14.sp,
+                            color = NeonCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Enter the 6-character note verification index handle or key URI to sync and decrypt the remote payload.",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = openNoteCodeInput,
+                                onValueChange = { openNoteCodeInput = it },
+                                placeholder = { Text("NOTE CODE / HANDLE", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = BorderDark,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val clean = openNoteCodeInput.trim()
+                                if (clean.isNotEmpty()) {
+                                    showOpenNoteDialog = false
+                                    onNavigateToReadNote(clean)
+                                    openNoteCodeInput = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("DECRYPT", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showOpenNoteDialog = false }) {
+                            Text("ABORT", fontFamily = FontFamily.Monospace, color = HotPink)
+                        }
+                    },
+                    containerColor = VoidDarkNavy,
+                    textContentColor = TextPrimary,
+                    titleContentColor = NeonCyan,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 // Announcement banner block

@@ -97,6 +97,9 @@ fun NavGraph(
                 onNavigateToCreateNote = {
                     navController.navigate(Routes.CREATE_NOTE)
                 },
+                onNavigateToReadNote = { shareCode ->
+                    navController.navigate("${Routes.READ_NOTE}/$shareCode")
+                },
                 onNavigateToSettings = {
                     navController.navigate(Routes.SETTINGS)
                 }

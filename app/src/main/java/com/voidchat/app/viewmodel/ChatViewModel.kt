@@ -1,6 +1,7 @@
 package com.voidchat.app.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.voidchat.app.crypto.CryptoManager
@@ -10,17 +11,18 @@ import com.voidchat.app.data.local.AppDatabase
 import com.voidchat.app.data.models.Message
 import com.voidchat.app.data.models.Contact
 import com.voidchat.app.data.remote.FirestoreManager
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
-import android.util.Log
+import javax.crypto.SecretKey
 
 sealed interface ChatState {
-    object Loading : ChatState
-    object KeyExchange : ChatState
-    object Encrypted : ChatState
-    data class Error(val reason: String) : ChatState
+    object LOADING : ChatState
+    object WAITING_FOR_KEY_EXCHANGE : ChatState
+    object ENCRYPTED : ChatState
+    data class ERROR(val reason: String) : ChatState
 }
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,7 +31,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
-    private val _chatState = MutableStateFlow<ChatState>(ChatState.Loading)
+    private val _chatState = MutableStateFlow<ChatState>(ChatState.LOADING)
     val chatState = _chatState.asStateFlow()
 
     private val _decryptedMessages = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -37,10 +39,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var currentChatId: String = ""
     private var myDisplayId: String = ""
-    private var sharedAesKey: javax.crypto.SecretKey? = null
+    private var sharedKey: SecretKey? = null
 
     init {
-        // Self-destruct background daemon execution
+        Log.d("VoidChatVM", "ChatViewModel loaded. Initializing self-destruct background daemon.")
         viewModelScope.launch {
             val identity = db.identityDao().getIdentity()
             myDisplayId = identity?.displayId ?: "UNKNOWN"
@@ -52,129 +54,171 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun getSharedKeyForSupport(): javax.crypto.SecretKey {
-        val md = java.security.MessageDigest.getInstance("SHA-256")
-        val aesKeyBytes = md.digest("VOID_SUPPORT_TUNNEL_PRESHARED_SECRET".toByteArray(Charsets.UTF_8))
-        return javax.crypto.spec.SecretKeySpec(aesKeyBytes, "AES")
+    fun initChat(chatId: String, otherUserDisplayId: String) {
+        Log.d("VoidChatVM", "initChat: chatId = $chatId, otherUserDisplayId = $otherUserDisplayId")
+        currentChatId = chatId
+        _chatState.value = ChatState.LOADING
+        sharedKey = null
+        _decryptedMessages.value = emptyMap()
+
+        viewModelScope.launch {
+            try {
+                // Determine our profile identity displayId
+                val identity = db.identityDao().getIdentity()
+                myDisplayId = identity?.displayId ?: IdentityManager.getDisplayId() ?: "UNKNOWN"
+                Log.d("VoidChatVM", "initChat profile checked: myDisplayId = $myDisplayId")
+
+                // 1. Generate ECDH key pair
+                Log.d("VoidChatVM", "initChat: Generating ECDH key pair for chatId: $chatId")
+                KeyExchangeManager.generateChatKeyPair(chatId)
+
+                // 2. Get public key
+                val publicKey = KeyExchangeManager.getPublicKeyBase64(chatId)
+                if (publicKey != null) {
+                    // 3. Upload to Firestore
+                    Log.d("VoidChatVM", "initChat: Uploading public key to Firestore for chatId: $chatId")
+                    FirestoreManager.uploadPublicKey(chatId, myDisplayId, publicKey)
+                } else {
+                    Log.e("VoidChatVM", "initChat error: public key base64 was generated null")
+                    _chatState.value = ChatState.ERROR("Handshake key compilation failed")
+                    return@launch
+                }
+
+                // 4. Start listening for key exchange completion
+                listenForKeyExchange(chatId)
+
+                // 5. Load messages
+                loadMessages(chatId)
+
+            } catch (e: Exception) {
+                Log.e("VoidChatVM", "initChat transition failed: ${e.message}", e)
+                _chatState.value = ChatState.ERROR("Handshake connection failed: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun listenForKeyExchange(chatId: String) {
+        Log.d("VoidChatVM", "listenForKeyExchange: start listening to chat doc in Firestore for chatId: $chatId")
+        FirebaseFirestore.getInstance().collection("chats").document(chatId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VoidChatVM", "listenForKeyExchange: snapshot listener error: ${error.message}", error)
+                    _chatState.value = ChatState.ERROR("Handshake connection failed: ${error.localizedMessage}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val pubA = snapshot.getString("publicKeyA") ?: ""
+                    val pubB = snapshot.getString("publicKeyB") ?: ""
+                    Log.d("VoidChatVM", "listenForKeyExchange update: publicKeyA is blank = ${pubA.isEmpty()}, publicKeyB is blank = ${pubB.isEmpty()}")
+                    if (pubA.isNotEmpty() && pubB.isNotEmpty()) {
+                        try {
+                            // Find the other user's public key from the chat doc
+                            val participantA = snapshot.getString("participantA") ?: ""
+                            val otherPublicKey = if (participantA == myDisplayId) pubB else pubA
+                            Log.d("VoidChatVM", "listenForKeyExchange: both keys online. otherPublicKey length: ${otherPublicKey.length}")
+
+                            // Perform ECDH and save shared key
+                            val derivedKey = KeyExchangeManager.performKeyExchange(chatId, otherPublicKey)
+                            if (derivedKey != null) {
+                                sharedKey = derivedKey
+                                _chatState.value = ChatState.ENCRYPTED
+                                Log.d("VoidChatVM", "listenForKeyExchange: ECDH succeeded. Key established! UI State is ENCRYPTED")
+                                viewModelScope.launch {
+                                    try {
+                                        FirestoreManager.markKeyExchangeComplete(chatId)
+                                    } catch (e: Exception) {
+                                        Log.e("VoidChatVM", "Failed to mark key exchange complete: ${e.message}")
+                                    }
+                                }
+                                // Decrypt loaded messages now that we have derived the AES session key
+                                decryptMessages(_messages.value)
+                            } else {
+                                Log.e("VoidChatVM", "listenForKeyExchange error: KeyExchangeManager performKeyExchange returned null")
+                                _chatState.value = ChatState.ERROR("Deriving secure AES session key failed")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("VoidChatVM", "listenForKeyExchange compilation error: ${e.message}", e)
+                            _chatState.value = ChatState.ERROR("Key exchange failed: ${e.localizedMessage}")
+                        }
+                    } else {
+                        Log.d("VoidChatVM", "listenForKeyExchange status: WAITING_FOR_KEY_EXCHANGE")
+                        _chatState.value = ChatState.WAITING_FOR_KEY_EXCHANGE
+                    }
+                } else {
+                    Log.d("VoidChatVM", "listenForKeyExchange status: Chat doc empty. WAITING_FOR_KEY_EXCHANGE")
+                    _chatState.value = ChatState.WAITING_FOR_KEY_EXCHANGE
+                }
+            }
     }
 
     fun loadMessages(chatId: String) {
+        Log.d("VoidChatVM", "loadMessages: Subscribing to message subcollection updates for chatId: $chatId")
         currentChatId = chatId
-        _chatState.value = ChatState.Loading
-        sharedAesKey = null
-        _decryptedMessages.value = emptyMap()
-
-        val isSupport = chatId.contains("SUPP") || chatId.contains("support") || chatId.contains("VOID-SUPP-CHAT-LINE")
-
         viewModelScope.launch {
-            Log.d("VoidKeyExchange", "loadMessages: Initiated for chatId: $chatId")
-            
-            // Ensure Identity is loaded
-            val identity = db.identityDao().getIdentity()
-            myDisplayId = identity?.displayId ?: IdentityManager.getDisplayId() ?: "UNKNOWN"
-            Log.d("VoidKeyExchange", "loadMessages: My displayId: $myDisplayId")
-
-            if (isSupport) {
-                sharedAesKey = getSharedKeyForSupport()
-                _chatState.value = ChatState.Encrypted
-                Log.d("VoidKeyExchange", "loadMessages: Support tunnel detected, initialized with preshared support key.")
-            } else {
-                // Generate and upload ECDH public key
-                try {
-                    Log.d("VoidKeyExchange", "loadMessages: Generating chat key pair for $chatId")
-                    KeyExchangeManager.generateChatKeyPair(chatId)
-                    val publicKey = KeyExchangeManager.getPublicKeyBase64(chatId)
-                    if (publicKey != null) {
-                        Log.d("VoidKeyExchange", "loadMessages: Generated public key. Uploading to Firestore...")
-                        FirestoreManager.uploadPublicKey(chatId, myDisplayId, publicKey)
-                    } else {
-                        Log.e("VoidKeyExchange", "loadMessages: Public key from KeyExchangeManager was null.")
+            try {
+                FirestoreManager.listenForMessages(chatId)
+                    .collect { remoteMessages ->
+                        Log.d("VoidChatVM", "loadMessages flow collected: size = ${remoteMessages.size}")
+                        _messages.value = remoteMessages
+                        decryptMessages(remoteMessages)
+                        markUnreadMessagesAsRead(chatId, remoteMessages)
                     }
-                } catch (e: Exception) {
-                    Log.e("VoidKeyExchange", "loadMessages: Key generation/upload failure: ${e.message}", e)
-                }
+            } catch (e: Exception) {
+                Log.e("VoidChatVM", "loadMessages failed: ${e.message}", e)
+                _chatState.value = ChatState.ERROR("Failed to load messages: ${e.localizedMessage}")
+            }
+        }
+    }
 
-                // Listen for key exchange completion
-                launch {
-                    FirestoreManager.listenForKeyExchange(chatId, myDisplayId).collect { completed ->
-                        Log.d("VoidKeyExchange", "loadMessages: listenForKeyExchange update: completed=$completed")
-                        if (completed) {
-                            try {
-                                val chatDoc = FirestoreManager.getChat(chatId)
-                                if (chatDoc != null) {
-                                    val otherPublicKey = if (chatDoc.participantA == myDisplayId) chatDoc.publicKeyB else chatDoc.publicKeyA
-                                    Log.d("VoidKeyExchange", "loadMessages: Resolving keys. otherPublicKey length=${otherPublicKey.length}")
-                                    if (otherPublicKey.isNotEmpty()) {
-                                        val sharedAes = KeyExchangeManager.performKeyExchange(chatId, otherPublicKey)
-                                        if (sharedAes != null) {
-                                            sharedAesKey = sharedAes
-                                            _chatState.value = ChatState.Encrypted
-                                            Log.d("VoidKeyExchange", "loadMessages: Key exchange perform succeeded! State is ENCRYPTED.")
-                                            FirestoreManager.markKeyExchangeComplete(chatId)
-                                            // Trigger decryption of cached messages
-                                            decryptMessages(_messages.value)
-                                        } else {
-                                            _chatState.value = ChatState.Error("Handshake key compilation failed")
-                                            Log.e("VoidKeyExchange", "loadMessages: performKeyExchange returned null")
-                                        }
-                                    } else {
-                                        _chatState.value = ChatState.KeyExchange
-                                        Log.w("VoidKeyExchange", "loadMessages: Key exchange status true, but other user key is blank.")
-                                    }
-                                } else {
-                                    _chatState.value = ChatState.KeyExchange
-                                    Log.e("VoidKeyExchange", "loadMessages: Failed to fetch chatDoc.")
-                                }
-                            } catch (e: Exception) {
-                                _chatState.value = ChatState.Error("Key exchange failed: ${e.message}")
-                                Log.e("VoidKeyExchange", "loadMessages: Key exchange perform exception: ${e.message}", e)
-                            }
-                        } else {
-                            _chatState.value = ChatState.KeyExchange
-                            Log.d("VoidKeyExchange", "loadMessages: Key exchange state is waiting.")
-                        }
-                    }
+    private fun markUnreadMessagesAsRead(chatId: String, remoteMessages: List<Message>) {
+        val currentUserId = myDisplayId
+        if (currentUserId.isEmpty() || currentUserId == "UNKNOWN") {
+            Log.d("VoidChatVM", "markUnreadMessagesAsRead: Deferred. Current user identity displayId is not resolved yet. Resolving...")
+            viewModelScope.launch {
+                val identity = db.identityDao().getIdentity()
+                val resolvedId = identity?.displayId ?: IdentityManager.getDisplayId() ?: "UNKNOWN"
+                if (resolvedId != "UNKNOWN") {
+                    myDisplayId = resolvedId
+                    markUnreadMessagesAsRead(chatId, remoteMessages)
                 }
             }
-
-            // Flow real-time database messages
-            launch {
-                FirestoreManager.getMessages(chatId).collect { remoteMsgs ->
-                    Log.d("VoidKeyExchange", "loadMessages: Flow received ${remoteMsgs.size} messages.")
-                    remoteMsgs.forEach { msg ->
-                        db.messageDao().insertMessage(msg)
+            return
+        }
+        val unreadReceivedMessages = remoteMessages.filter { msg ->
+            msg.senderId != currentUserId && !msg.isRead
+        }
+        if (unreadReceivedMessages.isNotEmpty()) {
+            Log.d("VoidChatVM", "markUnreadMessagesAsRead: Found ${unreadReceivedMessages.size} unread received messages. Launching update on Firestore.")
+            viewModelScope.launch {
+                unreadReceivedMessages.forEach { msg ->
+                    try {
+                        FirestoreManager.markMessageAsRead(chatId, msg.messageId)
+                    } catch (e: Exception) {
+                        Log.e("VoidChatVM", "markUnreadMessagesAsRead: Failed to mark message ${msg.messageId} as read: ${e.message}")
                     }
-                }
-            }
-
-            // Observe local database messages
-            launch {
-                db.messageDao().getMessagesByChatId(chatId).collect { dbMsgs ->
-                    val freshMsgs = dbMsgs.filter { !it.destroyed }
-                    Log.d("VoidKeyExchange", "loadMessages: Emitting ${freshMsgs.size} messages from local DB.")
-                    _messages.value = freshMsgs
-                    decryptMessages(freshMsgs)
                 }
             }
         }
     }
 
     private fun decryptMessages(msgList: List<Message>) {
-        val key = sharedAesKey
+        val key = sharedKey
+        if (key == null) {
+            Log.d("VoidChatVM", "decryptMessages: Deferred. Shared AES key not established yet.")
+            return
+        }
         val newDecryptedMap = _decryptedMessages.value.toMutableMap()
         var updated = false
         msgList.forEach { msg ->
             if (msg.destroyed) return@forEach
             if (!newDecryptedMap.containsKey(msg.messageId)) {
-                if (key != null) {
-                    val result = CryptoManager.decrypt(msg.encryptedPayload, msg.iv, key)
-                    if (result.isSuccess) {
-                        newDecryptedMap[msg.messageId] = result.getOrNull() ?: ""
-                        updated = true
-                        Log.d("VoidKeyExchange", "decryptMessages: Successfully decrypted msgId=${msg.messageId}")
-                    } else {
-                        Log.e("VoidKeyExchange", "decryptMessages: Decrypt failed for msgId=${msg.messageId}", result.exceptionOrNull())
-                    }
+                val result = CryptoManager.decrypt(msg.encryptedPayload, msg.iv, key)
+                if (result.isSuccess) {
+                    newDecryptedMap[msg.messageId] = result.getOrNull() ?: ""
+                    updated = true
+                    Log.d("VoidChatVM", "decryptMessages: Successfully decrypted message ${msg.messageId}")
+                } else {
+                    Log.e("VoidChatVM", "decryptMessages: Failed to decrypt message ${msg.messageId}", result.exceptionOrNull())
                 }
             }
         }
@@ -185,17 +229,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String, selfDestructSeconds: Int) {
         if (currentChatId.isEmpty() || text.trim().isEmpty()) return
-        val key = sharedAesKey
-        if (key == null) {
-            Log.d("VoidKeyExchange", "sendMessage: Refusing message transmission - key exchange is not complete yet.")
-            android.widget.Toast.makeText(getApplication(), "Waiting for key exchange...", android.widget.Toast.LENGTH_SHORT).show()
+        val key = sharedKey
+        
+        if (_chatState.value != ChatState.ENCRYPTED) {
+            Log.d("VoidChatVM", "sendMessage: Refused. Current state is: ${_chatState.value}")
+            android.widget.Toast.makeText(getApplication(), "Waiting for secure connection", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
+        if (key == null) {
+            Log.e("VoidChatVM", "sendMessage: Refused. Error: established key is null")
+            return
+        }
+
         viewModelScope.launch {
             try {
-                Log.d("VoidKeyExchange", "sendMessage: Encrypting message with shared AES session key.")
+                Log.d("VoidChatVM", "sendMessage: Encrypting plaintext with AES...")
                 val encrypted = CryptoManager.encrypt(text, key)
                 val messageId = "msg_${UUID.randomUUID()}"
+                
                 val message = Message(
                     messageId = messageId,
                     chatId = currentChatId,
@@ -208,23 +259,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     readAt = 0L,
                     isRead = false
                 )
-                
+
+                Log.d("VoidChatVM", "sendMessage: Dispatching encrypted message to Firestore node")
                 FirestoreManager.sendMessage(currentChatId, message)
-                db.messageDao().insertMessage(message)
-                Log.d("VoidKeyExchange", "sendMessage: Successfully dispatched E2E message: $messageId")
+                Log.d("VoidChatVM", "sendMessage: Dispatch complete for messageId = $messageId")
             } catch (e: Exception) {
-                _chatState.value = ChatState.Error("Handshake payload signing failure: ${e.localizedMessage}")
-                Log.e("VoidKeyExchange", "sendMessage: Dispatch error: ${e.message}", e)
+                Log.e("VoidChatVM", "sendMessage failed: ${e.message}", e)
+                _chatState.value = ChatState.ERROR("Message transmission failed: ${e.localizedMessage}")
             }
         }
     }
 
     fun performKeyExchange() {
         if (currentChatId.isEmpty()) return
+        Log.d("VoidChatVM", "performKeyExchange: Manually re-triggering secure handshake for chatId: $currentChatId")
         viewModelScope.launch {
-            _chatState.value = ChatState.Loading
-            delay(800)
-            loadMessages(currentChatId)
+            _chatState.value = ChatState.LOADING
+            delay(500)
+            initChat(currentChatId, "")
         }
     }
 
@@ -237,18 +289,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             if (msg.selfDestructSeconds > 0 && !msg.destroyed) {
                 val ageSeconds = (now - msg.timestamp) / 1000
                 if (ageSeconds >= msg.selfDestructSeconds) {
+                    Log.d("VoidChatVM", "executeSelfDestructCycle: Message ${msg.messageId} reached self-destruct limit.")
                     db.messageDao().markMessageDestroyed(msg.messageId)
-                    FirestoreManager.destroyMessage(msg.chatId, msg.messageId)
+                    try {
+                        FirestoreManager.destroyMessage(msg.chatId, msg.messageId)
+                    } catch (e: Exception) {
+                        Log.e("VoidChatVM", "executeSelfDestructCycle failed to delete message from Firestore: ${e.message}")
+                    }
                 }
             }
         }
-        
         db.messageDao().deleteExpiredMessages()
     }
 
     fun startSupportChat(onComplete: (String) -> Unit) {
         viewModelScope.launch {
             val userDisplayId = IdentityManager.getDisplayId() ?: "UNKNOWN-USER"
+            Log.d("VoidChatVM", "startSupportChat: Creating real direct support tunnel for user: $userDisplayId")
             val config = FirestoreManager.fetchConfig()
             val supportDisplayId = config["support_display_id"] ?: "VOID-SUPP-CHAT-LINE"
             
@@ -257,14 +314,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     Contact(
                         displayId = supportDisplayId,
                         nickname = "Void Support",
-                        publicKeyBase64 = "MOCK_SUPPORT_PUBLIC_KEY",
+                        publicKeyBase64 = "",
                         lastSeen = System.currentTimeMillis(),
                         isFavorite = true
                     )
                 )
-                android.util.Log.d("VoidFirestore", "startSupportChat: Successfully registered Void Support as local contact.")
+                Log.d("VoidChatVM", "startSupportChat: Added Support contact locally")
             } catch (e: Exception) {
-                android.util.Log.e("VoidFirestore", "startSupportChat: Error inserting local support contact: ${e.message}", e)
+                Log.e("VoidChatVM", "startSupportChat contact creation error: ${e.message}", e)
             }
             
             val chatId = FirestoreManager.createSupportChat(userDisplayId, supportDisplayId)
