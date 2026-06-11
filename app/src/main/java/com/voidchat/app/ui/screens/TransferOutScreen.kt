@@ -1,7 +1,13 @@
 package com.voidchat.app.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,15 +18,38 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.selection.SelectionContainer
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import com.voidchat.app.crypto.IdentityManager
 import com.voidchat.app.ui.theme.*
-import kotlinx.coroutines.delay
+
+fun generateQrCodeBitmap(content: String, sizeInPixels: Int): Bitmap? {
+    return try {
+        val writer = QRCodeWriter()
+        val bitMatrix = writer.encode(content, BarcodeFormat.QR_CODE, sizeInPixels, sizeInPixels)
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                bmp.setPixel(x, y, if (bitMatrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE)
+            }
+        }
+        bmp
+    } catch (e: Exception) {
+        null
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,20 +58,15 @@ fun TransferOutScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var ticksRemaining by remember { mutableStateOf(30) }
-    var qrContentHash by remember { mutableStateOf(System.currentTimeMillis().hashCode().toString()) }
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            if (ticksRemaining > 1) {
-                ticksRemaining--
-            } else {
-                ticksRemaining = 30
-                qrContentHash = System.currentTimeMillis().hashCode().toString()
-            }
-        }
+    
+    // Generate the full recovery code containing the identity private key
+    val recoveryCode = remember { IdentityManager.generateRecoveryCode() }
+    
+    // Generate a real ZXing QR code bitmap
+    val qrBitmap = remember(recoveryCode) {
+        generateQrCodeBitmap(recoveryCode, 512)
     }
 
     Scaffold(
@@ -62,7 +86,10 @@ fun TransferOutScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = VoidBlack),
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(
+                            onClick = onNavigateBack,
+                            modifier = Modifier.testTag("transfer_out_back_button")
+                        ) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = NeonCyan)
                         }
                     }
@@ -91,14 +118,15 @@ fun TransferOutScreen(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = HotPinkLight,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "CRITICAL WARNING: Once this QR contains is successfully handshake scanned, this physical terminal partition will overwrite its identity database automatically.",
-                    color = ErrorRed,
+                    text = "Scan the QR code below on your new device to securely transmit your digital identity layers.",
+                    color = TextSecondary,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     textAlign = TextAlign.Center,
@@ -107,12 +135,14 @@ fun TransferOutScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Draw high-fidelity cryptographic matrix QR code block
+                // Real QR Code Image representation of the recovery code
                 Surface(
                     color = Color.White,
                     border = BorderStroke(2.dp, NeonCyan),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.size(240.dp)
+                    modifier = Modifier
+                        .size(240.dp)
+                        .testTag("qr_code_surface")
                 ) {
                     Box(
                         modifier = Modifier
@@ -120,29 +150,20 @@ fun TransferOutScreen(
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            // Draw dynamic alignment anchors and matrix modules
-                            val colCount = 15
-                            val cellSize = size.width / colCount
-                            val rng = java.util.Random(qrContentHash.hashCode().toLong())
-                            
-                            for (r in 0 until colCount) {
-                                for (c in 0 until colCount) {
-                                    val isAnchor = (r < 4 && c < 4) || (r < 4 && c >= colCount - 4) || (r >= colCount - 4 && c < 4)
-                                    val drawFill = if (isAnchor) {
-                                        (r == 0 || r == 3 || c == 0 || c == 3)
-                                    } else {
-                                        rng.nextBoolean()
-                                    }
-                                    if (drawFill) {
-                                        drawRect(
-                                            color = Color.Black,
-                                            topLeft = Offset(c * cellSize, r * cellSize),
-                                            size = androidx.compose.ui.geometry.Size(cellSize, cellSize)
-                                        )
-                                    }
-                                }
-                            }
+                        if (qrBitmap != null) {
+                            Image(
+                                bitmap = qrBitmap.asImageBitmap(),
+                                contentDescription = "Recovery QR Code",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Text(
+                                "Failed to generate QR",
+                                color = Color.Red,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -150,13 +171,51 @@ fun TransferOutScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "ROTATING EPHEMERAL MIGRATION TUNNEL KEY:\nRefreshing in ${ticksRemaining}s",
+                    text = "Scan this code on your new device",
                     color = TextPrimary,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium
                 )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                SelectionContainer {
+                    Text(
+                        text = recoveryCode,
+                        color = NeonCyan,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Void Identity Recovery Code", recoveryCode)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Recovery code copied to clipboard", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("copy_code_instead_button")
+                ) {
+                    Text(
+                        text = "COPY CODE INSTEAD",
+                        color = VoidBlack,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

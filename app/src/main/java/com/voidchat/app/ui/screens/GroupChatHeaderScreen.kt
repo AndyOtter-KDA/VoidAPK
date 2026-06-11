@@ -34,11 +34,13 @@ fun GroupChatHeaderScreen(
     modifier: Modifier = Modifier
 ) {
     val groupInfo by viewModel.groupInfo.collectAsState()
+    val currentMembers by viewModel.groupMembers.collectAsState()
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     // Owner checks
     val isOwner = groupInfo?.createdBy == viewModel.myDisplayId
+    val isUserAdmin = isOwner || currentMembers.any { it.displayId == viewModel.myDisplayId && it.role == "ADMIN" }
 
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf("") }
@@ -172,7 +174,7 @@ fun GroupChatHeaderScreen(
                                         fontFamily = FontFamily.Monospace,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    if (isOwner) {
+                                    if (isUserAdmin) {
                                         TextButton(onClick = { isEditingName = true }) {
                                             Text("EDIT NAME", color = NeonCyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                                         }
@@ -228,7 +230,7 @@ fun GroupChatHeaderScreen(
                                         modifier = Modifier.weight(1f),
                                         lineHeight = 15.sp
                                     )
-                                    if (isOwner) {
+                                    if (isUserAdmin) {
                                         TextButton(onClick = { isEditingDesc = true }) {
                                             Text("EDIT DESC", color = NeonCyan, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
                                         }
@@ -318,7 +320,7 @@ fun GroupChatHeaderScreen(
                 }
 
                 // Section 3: Pin Announcement Broadcast (Admins Only)
-                if (isOwner) {
+                if (isUserAdmin) {
                     item {
                         Surface(
                             color = VoidDarkBlue,
@@ -498,10 +500,13 @@ fun GroupChatHeaderScreen(
                 items(membersList) { mbr ->
                     val isSelf = mbr == viewModel.myDisplayId
                     val isMbrCreator = mbr == creator
+                    val targetMember = currentMembers.find { it.displayId == mbr }
+                    val isMbrAdmin = targetMember?.role == "ADMIN"
+                    val canManage = isUserAdmin && !isMbrCreator && !isSelf && (isOwner || !isMbrAdmin)
 
                     Surface(
                         color = VoidDarkNavy,
-                        border = BorderStroke(1.dp, if (isMbrCreator) NeonCyan.copy(alpha = 0.5f) else BorderDark),
+                        border = BorderStroke(1.dp, if (isMbrCreator) NeonCyan.copy(alpha = 0.5f) else if (isMbrAdmin) NeonCyan.copy(alpha = 0.3f) else BorderDark),
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -517,7 +522,7 @@ fun GroupChatHeaderScreen(
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = "User info",
-                                    tint = if (isMbrCreator) NeonCyan else TextSecondary,
+                                    tint = if (isMbrCreator) NeonCyan else if (isMbrAdmin) NeonCyan.copy(alpha = 0.8f) else TextSecondary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -527,11 +532,11 @@ fun GroupChatHeaderScreen(
                                         color = TextPrimary,
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        fontWeight = if (isSelf) FontWeight.Bold else FontWeight.Bold
+                                        fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = if (isMbrCreator) "[ OPERATIONAL CREATOR / ADMIN ]" else "[ SECURED PEER NODE ]",
-                                        color = if (isMbrCreator) HotPinkLight else TextMuted,
+                                        text = if (isMbrCreator) "[ OPERATIONAL CREATOR / ADMIN ]" else if (isMbrAdmin) "[ GROUP ADMIN ]" else "[ SECURED PEER NODE ]",
+                                        color = if (isMbrCreator) HotPinkLight else if (isMbrAdmin) NeonCyan else TextMuted,
                                         fontSize = 8.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold
@@ -540,7 +545,7 @@ fun GroupChatHeaderScreen(
                             }
 
                             Row {
-                                if (isOwner && !isMbrCreator) {
+                                if (canManage) {
                                     // Kick action
                                     TextButton(
                                         onClick = {
@@ -557,20 +562,37 @@ fun GroupChatHeaderScreen(
                                     
                                     Spacer(modifier = Modifier.width(4.dp))
 
-                                    // Promote Admin action (NEW!)
-                                    TextButton(
-                                        onClick = {
-                                            viewModel.promoteMemberToAdmin(mbr) { ok ->
-                                                if (ok) {
-                                                    Toast.makeText(context, "$mbr promoted to ADMIN successfully.", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    Toast.makeText(context, "Promotion error.", Toast.LENGTH_SHORT).show()
+                                    // Promote/Demote Admin action
+                                    if (isMbrAdmin) {
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.updateMemberRole(mbr, "MEMBER") { ok ->
+                                                    if (ok) {
+                                                        Toast.makeText(context, "$mbr demoted to MEMBER successfully.", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Demotion error.", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 }
-                                            }
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 4.dp)
-                                    ) {
-                                        Text("PROMOTE", color = NeonCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                        ) {
+                                            Text("DEMOTE", color = HotPinkLight, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.updateMemberRole(mbr, "ADMIN") { ok ->
+                                                    if (ok) {
+                                                        Toast.makeText(context, "$mbr promoted to ADMIN successfully.", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "Promotion error.", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 4.dp)
+                                        ) {
+                                            Text("PROMOTE", color = NeonCyan, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -590,8 +612,8 @@ fun GroupChatHeaderScreen(
                                     }
                                 } else {
                                     Text(
-                                        text = if (isSelf) "ACTIVE" else "SYNCED",
-                                        color = if (isSelf) NeonCyan else MatrixGreen,
+                                        text = if (isSelf) "ACTIVE" else if (isMbrCreator || isMbrAdmin) "ADMIN" else "SYNCED",
+                                        color = if (isSelf) NeonCyan else if (isMbrCreator || isMbrAdmin) NeonCyan.copy(alpha = 0.8f) else MatrixGreen,
                                         fontSize = 9.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.Bold

@@ -31,6 +31,7 @@ object Routes {
     const val PRIVACY_POLICY = "privacy_policy"
     const val CONTACT_PICKER = "contact_picker"
     const val SUPPORT_TICKET = "support_ticket"
+    const val RESTORE = "restore"
 }
 
 @Composable
@@ -55,6 +56,9 @@ fun NavGraph(
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.ONBOARDING) { inclusive = true }
                     }
+                },
+                onNavigateToRestore = {
+                    navController.navigate(Routes.RESTORE)
                 }
             )
         }
@@ -275,7 +279,24 @@ fun NavGraph(
         }
 
         composable(Routes.BACKUP) {
-            BackupScreen(onNavigateBack = { navController.popBackStack() })
+            BackupScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToTransferOut = { navController.navigate(Routes.TRANSFER_OUT) }
+            )
+        }
+
+        composable(Routes.RESTORE) {
+            RestoreScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToHome = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onNavigateToTransferIn = {
+                    navController.navigate(Routes.TRANSFER_IN)
+                }
+            )
         }
 
         composable(Routes.TRANSFER_IN) {

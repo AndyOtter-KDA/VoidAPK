@@ -26,6 +26,9 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
     private val _groupInfo = MutableStateFlow<GroupChat?>(null)
     val groupInfo = _groupInfo.asStateFlow()
 
+    private val _groupMembers = MutableStateFlow<List<GroupMember>>(emptyList())
+    val groupMembers = _groupMembers.asStateFlow()
+
     private val _contacts = MutableStateFlow<List<Contact>>(emptyList())
     val contacts = _contacts.asStateFlow()
 
@@ -64,13 +67,20 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                 _messages.value = groupMsgs.filter { !it.destroyed }
             }
         }
+        viewModelScope.launch {
+            FirestoreManager.listenForGroupMembers(groupId).collect { members ->
+                _groupMembers.value = members
+            }
+        }
     }
 
     fun sendMessage(text: String, selfDestructSeconds: Int) {
         if (currentGroupId.isEmpty() || text.trim().isEmpty()) return
         viewModelScope.launch {
             try {
-                val aesKey = CryptoManager.generateAESKey()
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                val keyBytes = md.digest(currentGroupId.toByteArray(Charsets.UTF_8))
+                val aesKey = CryptoManager.secretKeyFromBytes(keyBytes)
                 val encrypted = CryptoManager.encrypt(text, aesKey)
 
                 val message = GroupMessage(
@@ -383,6 +393,26 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                 onComplete(true)
             } catch (e: Exception) {
                 Log.e("VoidGroupVM", "promoteMemberToAdmin failed for $memberDisplayId: ${e.message}", e)
+                onComplete(false)
+            }
+        }
+    }
+
+    fun updateMemberRole(memberDisplayId: String, role: String, onComplete: (Boolean) -> Unit) {
+        if (currentGroupId.isEmpty()) {
+            onComplete(false)
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val dbFirestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                dbFirestore.collection("groups").document(currentGroupId)
+                    .collection("members").document(memberDisplayId)
+                    .update("role", role).await()
+                Log.d("VoidGroupVM", "updateMemberRole: successfully updated role of $memberDisplayId to $role")
+                onComplete(true)
+            } catch (e: Exception) {
+                Log.e("VoidGroupVM", "updateMemberRole failed for $memberDisplayId: ${e.message}", e)
                 onComplete(false)
             }
         }

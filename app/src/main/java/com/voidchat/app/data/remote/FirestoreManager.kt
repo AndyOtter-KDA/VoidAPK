@@ -382,6 +382,36 @@ object FirestoreManager {
         return listenForGroupMessages(groupId)
     }
 
+    fun listenForGroupMembers(groupId: String): Flow<List<GroupMember>> = callbackFlow {
+        Log.d(TAG, "listenForGroupMembers: Subscribing to members for groupId: $groupId")
+        val db = FirebaseFirestore.getInstance()
+        val listener = db.collection("groups")
+            .document(groupId)
+            .collection("members")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            GroupMember(
+                                displayId = doc.id,
+                                publicKeyBase64 = doc.getString("publicKeyBase64") ?: "",
+                                role = doc.getString("role") ?: "MEMBER",
+                                joinedAt = doc.getLong("joinedAt") ?: 0L
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    trySend(list)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
     fun getGroups(userDisplayId: String): Flow<List<GroupChat>> = callbackFlow {
         Log.d(TAG, "getGroups: Subscribing to groups for user: $userDisplayId")
         val db = FirebaseFirestore.getInstance()

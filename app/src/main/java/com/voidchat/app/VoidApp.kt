@@ -5,8 +5,14 @@ import com.google.firebase.FirebaseApp
 import com.voidchat.app.data.local.AppDatabase
 
 class VoidApp : Application() {
+    companion object {
+        lateinit var instance: VoidApp
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         
         try {
             // Initialize Firebase

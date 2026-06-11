@@ -43,6 +43,10 @@ fun GroupChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val groupInfo by viewModel.groupInfo.collectAsState()
+    val currentMembers by viewModel.groupMembers.collectAsState()
+
+    val isOwner = groupInfo?.createdBy == myDisplayId
+    val isUserAdmin = isOwner || currentMembers.any { it.displayId == myDisplayId && it.role == "ADMIN" }
 
     var textInput by remember { mutableStateOf("") }
     var selectedTimerSeconds by remember { mutableStateOf(0) }
@@ -152,8 +156,7 @@ fun GroupChatScreen(
                                 )
                             }
                             // Button to unpin if user is admin/owner
-                            val isOwner = groupInfo?.createdBy == myDisplayId
-                            if (isOwner) {
+                            if (isUserAdmin) {
                                 IconButton(onClick = { viewModel.unpinMessage() }) {
                                     Icon(Icons.Default.Close, contentDescription = "Unpin", tint = TextMuted)
                                 }
@@ -185,8 +188,9 @@ fun GroupChatScreen(
                         GroupMessageBubble(
                             msg = msg,
                             myDisplayId = myDisplayId,
-                            isOwner = groupInfo?.createdBy == myDisplayId,
-                            onPin = { viewModel.pinMessage(msg.messageId, msg.encryptedPayload) },
+                            isOwner = isOwner,
+                            isAdmin = isUserAdmin,
+                            onPin = { decryptedText -> viewModel.pinMessage(msg.messageId, decryptedText) },
                             onDelete = { viewModel.deleteGroupMessage(msg.messageId) }
                         )
                     }
@@ -290,11 +294,24 @@ fun GroupMessageBubble(
     msg: GroupMessage,
     myDisplayId: String,
     isOwner: Boolean,
-    onPin: () -> Unit,
+    isAdmin: Boolean,
+    onPin: (String) -> Unit,
     onDelete: () -> Unit
 ) {
     val isMine = msg.senderId == myDisplayId
     var showMenu by remember { mutableStateOf(false) }
+
+    val decryptedText = remember(msg.messageId, msg.encryptedPayload, msg.iv) {
+        try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val keyBytes = md.digest(msg.groupId.toByteArray(Charsets.UTF_8))
+            val aesKey = com.voidchat.app.crypto.CryptoManager.secretKeyFromBytes(keyBytes)
+            val result = com.voidchat.app.crypto.CryptoManager.decrypt(msg.encryptedPayload, msg.iv, aesKey)
+            result.getOrDefault("[Unable to decrypt]")
+        } catch (e: Exception) {
+            "[Decryption Error]"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -327,7 +344,7 @@ fun GroupMessageBubble(
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                     Text(
-                        text = msg.encryptedPayload,
+                        text = decryptedText,
                         color = TextPrimary,
                         fontSize = 13.sp,
                         fontFamily = FontFamily.Monospace
@@ -347,20 +364,22 @@ fun GroupMessageBubble(
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier.background(VoidDarkBlue)
             ) {
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Share, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("📌 PIN AS ANNOUNCEMENT", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                if (isAdmin) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("📌 PIN AS ANNOUNCEMENT", color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onPin(decryptedText)
                         }
-                    },
-                    onClick = {
-                        showMenu = false
-                        onPin()
-                    }
-                )
-                if (isMine || isOwner) {
+                    )
+                }
+                if (isMine || isAdmin) {
                     DropdownMenuItem(
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {

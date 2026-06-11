@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -24,12 +25,11 @@ fun OnboardingScreen(
     viewModel: OnboardingViewModel,
     onNavigateToRecovery: (displayId: String, List<String>) -> Unit,
     onNavigateToHome: () -> Unit,
+    onNavigateToRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
-    var restoreInput by remember { mutableStateOf("") }
-    var restoreFlow by remember { mutableStateOf(false) }
 
     LaunchedEffect(state) {
         if (state is OnboardingState.Created) {
@@ -81,109 +81,54 @@ fun OnboardingScreen(
 
                 Spacer(modifier = Modifier.height(48.dp))
 
-                if (!restoreFlow) {
+                Text(
+                    text = "Initialize an independent cryptographic identity kernel. No email, no telephone, no phone book correlation. Only local client E2E tunnels.",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(48.dp))
+
+                Button(
+                    onClick = { viewModel.createIdentity() },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("create_identity_button")
+                ) {
                     Text(
-                        text = "Initialize an independent cryptographic identity kernel. No email, no telephone, no phone book correlation. Only local client E2E tunnels.",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 20.sp,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(48.dp))
-
-                    Button(
-                        onClick = { viewModel.createIdentity() },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "CREATE NEW INDEPENDENT IDENTITY",
-                            color = VoidBlack,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedButton(
-                        onClick = { restoreFlow = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                        border = BorderStroke(1.dp, BorderDark),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "RESTORE IDENTITY FROM BACKUP",
-                            color = TextPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
-                    }
-                } else {
-                    // Restore Phrase Form
-                    Text(
-                        text = "RESTORE TERMINAL NODE",
-                        color = HotPinkLight,
-                        fontSize = 14.sp,
+                        text = "CREATE NEW IDENTITY",
+                        color = VoidBlack,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
+                        fontSize = 12.sp
                     )
+                }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    OutlinedTextField(
-                        value = restoreInput,
-                        onValueChange = { restoreInput = it },
-                        label = { Text("ENTER 12 RECOVERY WORDS", fontFamily = FontFamily.Monospace) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = HotPink,
-                            unfocusedBorderColor = BorderDark,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp)
+                OutlinedButton(
+                    onClick = onNavigateToRestore,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                    border = BorderStroke(1.dp, BorderDark),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("already_have_identity_button")
+                ) {
+                    Text(
+                        text = "I ALREADY HAVE AN IDENTITY",
+                        color = TextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
                     )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Button(
-                        onClick = { viewModel.restoreFromPhrase(restoreInput) },
-                        colors = ButtonDefaults.buttonColors(containerColor = HotPink),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "EXECUTE DECRYPTON HANDSHAKE",
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    TextButton(
-                        onClick = { restoreFlow = false }
-                    ) {
-                        Text(
-                            text = "<- ABORT OPERATION",
-                            color = TextMuted,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
 
                 // States indicators
