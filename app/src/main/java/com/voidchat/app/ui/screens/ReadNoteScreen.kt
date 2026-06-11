@@ -42,8 +42,6 @@ fun ReadNoteScreen(
     modifier: Modifier = Modifier
 ) {
     var rawInputCode by remember { mutableStateOf(shareCode) }
-    var inputPassword by remember { mutableStateOf("") }
-    var showPasswordRequiredPrompt by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
@@ -52,13 +50,6 @@ fun ReadNoteScreen(
     DisposableEffect(Unit) {
         onDispose {
             viewModel.resetState()
-        }
-    }
-
-    // Automatically check if note needs password or trigger decrypt on fetch
-    LaunchedEffect(state) {
-        if (state is NoteUiState.Error && (state as NoteUiState.Error).message.contains("protected with a cognitive password")) {
-            showPasswordRequiredPrompt = true
         }
     }
 
@@ -232,8 +223,6 @@ fun ReadNoteScreen(
                     OutlinedButton(
                         onClick = {
                             viewModel.resetState()
-                            showPasswordRequiredPrompt = false
-                            inputPassword = ""
                             onNavigateBack()
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
@@ -312,46 +301,6 @@ fun ReadNoteScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    if (showPasswordRequiredPrompt) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(VoidDarkNavy, RoundedCornerShape(8.dp))
-                                .border(BorderStroke(1.dp, WarningYellow), RoundedCornerShape(8.dp))
-                                .padding(12.dp)
-                        ) {
-                            Icon(Icons.Default.Lock, contentDescription = "Lock", tint = WarningYellow, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "This note is password protected. Enter password below to proceed.",
-                                color = WarningYellow,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        OutlinedTextField(
-                            value = inputPassword,
-                            onValueChange = { inputPassword = it },
-                            placeholder = { Text("Enter password", fontFamily = FontFamily.Monospace, color = TextMuted) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = WarningYellow,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            ),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
                     Spacer(modifier = Modifier.height(32.dp))
 
                     if (state is NoteUiState.Reading) {
@@ -359,8 +308,7 @@ fun ReadNoteScreen(
                     } else {
                         Button(
                             onClick = {
-                                val password = if (showPasswordRequiredPrompt && inputPassword.isNotEmpty()) inputPassword else null
-                                viewModel.readNote(rawInputCode, password)
+                                viewModel.readNote(rawInputCode)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WarningYellow),
                             shape = RoundedCornerShape(8.dp),
@@ -376,7 +324,7 @@ fun ReadNoteScreen(
                         }
                     }
 
-                    if (state is NoteUiState.Error && !showPasswordRequiredPrompt) {
+                    if (state is NoteUiState.Error) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = (state as NoteUiState.Error).message,

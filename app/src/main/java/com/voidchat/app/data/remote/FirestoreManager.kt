@@ -59,7 +59,6 @@ object FirestoreManager {
     }
 
     suspend fun uploadPublicKey(chatId: String, userDisplayId: String, publicKeyBase64: String) {
-        Log.d(TAG, "uploadPublicKey: Preparing to upload key for user $userDisplayId in chat $chatId")
         val db = FirebaseFirestore.getInstance()
         try {
             val docRef = db.collection("chats").document(chatId)
@@ -68,13 +67,11 @@ object FirestoreManager {
             if (doc.exists()) {
                 val participantA = doc.getString("participantA") ?: ""
                 val participantB = doc.getString("participantB") ?: ""
-                Log.d(TAG, "uploadPublicKey: Chat exists. participantA=$participantA, participantB=$participantB")
                 if (userDisplayId == participantA) {
                     updates["publicKeyA"] = publicKeyBase64
                 } else if (userDisplayId == participantB) {
                     updates["publicKeyB"] = publicKeyBase64
                 } else {
-                    Log.w(TAG, "uploadPublicKey: user displayId $userDisplayId is not configured. Setting to empty slot.")
                     if (participantA.isEmpty() || participantA == userDisplayId) {
                         updates["publicKeyA"] = publicKeyBase64
                     } else {
@@ -82,9 +79,7 @@ object FirestoreManager {
                     }
                 }
                 docRef.update(updates).await()
-                Log.d(TAG, "uploadPublicKey: Key updated successfully on Firestore.")
             } else {
-                Log.w(TAG, "uploadPublicKey: Chat document $chatId didn't exist yet. Creating doc.")
                 updates["chatId"] = chatId
                 updates["participantA"] = userDisplayId
                 updates["publicKeyA"] = publicKeyBase64
@@ -93,10 +88,16 @@ object FirestoreManager {
                 updates["lastMessageAt"] = System.currentTimeMillis()
                 updates["backgroundTheme"] = "DEFAULT"
                 docRef.set(updates, SetOptions.merge()).await()
-                Log.d(TAG, "uploadPublicKey: Chat document initialized with $userDisplayId as participantA & publicKeyA.")
             }
+            Log.d("VoidFirestore", "Public key uploaded for $userDisplayId in chat $chatId")
+
+            // Wait and read the document back to verify the key was saved
+            val verifyDoc = docRef.get().await()
+            val savedKeyA = verifyDoc.getString("publicKeyA") ?: ""
+            val savedKeyB = verifyDoc.getString("publicKeyB") ?: ""
+            Log.d("VoidFirestore", "Verification read-back for chat $chatId: publicKeyA=$savedKeyA publicKeyB=$savedKeyB")
         } catch (e: Exception) {
-            Log.e(TAG, "uploadPublicKey failed: ${e.message}", e)
+            Log.e("VoidFirestore", "uploadPublicKey failed: ${e.message}", e)
             throw e
         }
     }
@@ -498,55 +499,31 @@ object FirestoreManager {
         }
     }
 
-    suspend fun createNote(note: Note) {
-        Log.d(TAG, "createNote: Storing note: noteId = ${note.noteId}")
-        val db = FirebaseFirestore.getInstance()
-        try {
-            val data = hashMapOf(
-                "noteId" to note.noteId,
-                "encryptedPayload" to note.encryptedPayload,
-                "iv" to note.iv,
-                "salt" to note.salt,
-                "shortCode" to note.shortCode,
-                "shortKey" to note.shortKey,
-                "createdAt" to note.createdAt,
-                "expiresAt" to note.expiresAt,
-                "maxViews" to note.maxViews,
-                "currentViews" to note.currentViews,
-                "destroyed" to note.destroyed,
-                "hasPassword" to note.hasPassword,
-                "keyBase64" to note.keyBase64
-            )
-            db.collection("notes").document(note.noteId).set(data, SetOptions.merge()).await()
-            Log.d(TAG, "createNote: Successfully wrote note ${note.noteId}")
-        } catch (e: Exception) {
-            Log.e(TAG, "createNote failed: ${e.message}", e)
-            throw e
-        }
-    }
-
-    fun uploadNote(note: Note, callback: (String) -> Unit) {
-        Log.d("VoidFirestore", "uploadNote: Uploading note noteId = ${note.noteId} shortCode = ${note.shortCode}")
+    fun uploadNote(
+        noteCode: com.voidchat.app.crypto.NoteCode,
+        encryptedPayload: String,
+        iv: String,
+        expiresAt: Long,
+        callback: (String) -> Unit
+    ) {
+        Log.d("VoidFirestore", "uploadNote: Uploading note with ID ${noteCode.shortCode}")
         val db = FirebaseFirestore.getInstance()
         val data = hashMapOf(
-            "noteId" to note.noteId,
-            "encryptedPayload" to note.encryptedPayload,
-            "iv" to note.iv,
-            "salt" to note.salt,
-            "shortCode" to note.shortCode,
-            "shortKey" to note.shortKey,
-            "createdAt" to note.createdAt,
-            "expiresAt" to note.expiresAt,
-            "maxViews" to note.maxViews,
-            "currentViews" to note.currentViews,
-            "destroyed" to note.destroyed,
-            "hasPassword" to note.hasPassword,
-            "keyBase64" to note.keyBase64
+            "fullKeyBase64" to noteCode.fullKeyBase64,
+            "encryptedPayload" to encryptedPayload,
+            "iv" to iv,
+            "createdAt" to System.currentTimeMillis(),
+            "expiresAt" to expiresAt,
+            "maxViews" to 1,
+            "currentViews" to 0,
+            "destroyed" to false,
+            "shortCode" to noteCode.shortCode,
+            "shortKey" to noteCode.shortKey
         )
-        db.collection("notes").document(note.noteId).set(data, SetOptions.merge())
+        db.collection("notes").document(noteCode.shortCode).set(data, SetOptions.merge())
             .addOnSuccessListener {
-                Log.d("VoidFirestore", "uploadNote success: noteId = ${note.noteId}")
-                callback(note.noteId)
+                Log.d("VoidFirestore", "Note uploaded with ID: ${noteCode.shortCode}")
+                callback(noteCode.shortCode)
             }
             .addOnFailureListener { e ->
                 Log.e("VoidFirestore", "uploadNote failure: ${e.message}", e)
@@ -554,19 +531,25 @@ object FirestoreManager {
             }
     }
 
+    fun testConnection(callback: (Boolean) -> Unit) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("config").document("app_version").get()
+            .addOnSuccessListener { callback(true) }
+            .addOnFailureListener { callback(false) }
+    }
+
     fun getNoteByShortCode(shortCode: String, callback: (Note?) -> Unit) {
         val cleanShortCode = shortCode.trim()
-        Log.d("VoidFirestore", "getNoteByShortCode: Querying for shortCode = $cleanShortCode")
+        Log.d("VoidFirestore", "getNoteByShortCode: Querying by ID = $cleanShortCode")
         val db = FirebaseFirestore.getInstance()
         db.collection("notes")
-            .whereEqualTo("shortCode", cleanShortCode)
+            .document(cleanShortCode)
             .get()
-            .addOnSuccessListener { querySnapshot ->
-                val doc = querySnapshot.documents.firstOrNull()
+            .addOnSuccessListener { doc ->
                 if (doc != null && doc.exists()) {
                     val destroyed = doc.getBoolean("destroyed") ?: false
                     val noteValue = Note(
-                        noteId = doc.getString("noteId") ?: doc.id,
+                        noteId = doc.id,
                         encryptedPayload = doc.getString("encryptedPayload") ?: "",
                         iv = doc.getString("iv") ?: "",
                         createdAt = doc.getLong("createdAt") ?: 0L,
@@ -576,8 +559,8 @@ object FirestoreManager {
                         destroyed = destroyed,
                         salt = doc.getString("salt"),
                         hasPassword = doc.getBoolean("hasPassword") ?: false,
-                        keyBase64 = doc.getString("keyBase64"),
-                        shortCode = doc.getString("shortCode") ?: "",
+                        keyBase64 = doc.getString("fullKeyBase64") ?: doc.getString("keyBase64"),
+                        shortCode = doc.id,
                         shortKey = doc.getString("shortKey")
                     )
                     Log.d("VoidFirestore", "getNoteByShortCode success: found noteId = ${noteValue.noteId}")

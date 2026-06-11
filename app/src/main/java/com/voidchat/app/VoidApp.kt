@@ -11,6 +11,15 @@ class VoidApp : Application() {
         try {
             // Initialize Firebase
             FirebaseApp.initializeApp(this)
+            
+            // Test connection to Firestore
+            com.voidchat.app.data.remote.FirestoreManager.testConnection { success ->
+                if (success) {
+                    android.util.Log.d("VoidFirestore", "Real Firestore online and connected successfully on startup.")
+                } else {
+                    android.util.Log.e("VoidFirestore", "Real Firestore failed connection test on startup.")
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("VoidApp", "Firebase init error: ${e.message}", e)
         }

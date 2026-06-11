@@ -13,11 +13,12 @@ data class NoteEncryptionResult(
     val saltBase64: String?
 )
 
-data class ShortNoteCode(
-    val code: String,
-    val hasPassword: Boolean,
+data class NoteCode(
     val fullNoteId: String,
-    val fullKeyBase64: String?
+    val fullKeyBase64: String,
+    val shortCode: String,
+    val shortKey: String,
+    val displayCode: String
 )
 
 object NoteCryptoManager {
@@ -36,65 +37,51 @@ object NoteCryptoManager {
         val iterationCount = 100000
         val keyLength = 256
         val spec = PBEKeySpec(password.toCharArray(), salt, iterationCount, keyLength)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        val factory = try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        } catch (e: Exception) {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")
+        }
         val keyBytes = factory.generateSecret(spec).encoded
         return SecretKeySpec(keyBytes, "AES")
     }
 
-    fun encryptNote(plaintext: String, password: String?): NoteEncryptionResult {
-        return if (password.isNullOrEmpty()) {
-            val aesKey = CryptoManager.generateAESKey()
-            val encData = CryptoManager.encrypt(plaintext, aesKey)
-            val keyBase64 = Base64.encodeToString(aesKey.encoded, Base64.NO_WRAP)
-            NoteEncryptionResult(
-                encryptedPayload = encData.payload,
-                iv = encData.iv,
-                keyBase64 = keyBase64,
-                saltBase64 = null
-            )
-        } else {
-            val salt = ByteArray(16)
-            SecureRandom().nextBytes(salt)
-            val keySpec = deriveKeyFromPassword(password, salt)
-            val encData = CryptoManager.encrypt(plaintext, keySpec)
-            val saltBase64 = Base64.encodeToString(salt, Base64.NO_WRAP)
-            NoteEncryptionResult(
-                encryptedPayload = encData.payload,
-                iv = encData.iv,
-                keyBase64 = "",
-                saltBase64 = saltBase64
-            )
-        }
+    fun encryptNote(plaintext: String): NoteEncryptionResult {
+        val aesKey = CryptoManager.generateAESKey()
+        val encData = CryptoManager.encrypt(plaintext, aesKey)
+        val keyBase64 = Base64.encodeToString(aesKey.encoded, Base64.NO_WRAP)
+        return NoteEncryptionResult(
+            encryptedPayload = encData.payload,
+            iv = encData.iv,
+            keyBase64 = keyBase64,
+            saltBase64 = null
+        )
     }
 
-    fun decryptNote(encryptedPayload: String, iv: String, keyBase64: String?, password: String?, saltBase64: String?): Result<String> {
+    fun decryptNote(encryptedPayload: String, iv: String, keyBase64: String?): Result<String> {
         return try {
-            val secretKey = if (password.isNullOrEmpty()) {
-                if (keyBase64.isNullOrEmpty()) {
-                    return Result.failure(IllegalArgumentException("Decryption key must be provided if not password locked"))
-                }
-                val keyBytes = Base64.decode(keyBase64, Base64.NO_WRAP)
-                SecretKeySpec(keyBytes, "AES")
-            } else {
-                if (saltBase64.isNullOrEmpty()) {
-                    return Result.failure(IllegalArgumentException("Salt must be provided for password derivation"))
-                }
-                val saltBytes = Base64.decode(saltBase64, Base64.NO_WRAP)
-                deriveKeyFromPassword(password, saltBytes)
+            if (keyBase64.isNullOrEmpty()) {
+                return Result.failure(IllegalArgumentException("Decryption key must be provided"))
             }
+            val keyBytes = Base64.decode(keyBase64, Base64.NO_WRAP)
+            val secretKey = SecretKeySpec(keyBytes, "AES")
             CryptoManager.decrypt(encryptedPayload, iv, secretKey)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    fun generateNoteCode(noteId: String, keyBase64: String, hasPassword: Boolean): String {
-        return if (!hasPassword) {
-            val shortId = noteId.take(5)
-            val shortKey = keyBase64.filter { it.isLetterOrDigit() }.take(6)
-            "$shortId-$shortKey"
-        } else {
-            noteId.take(5)
-        }
+    fun generateNoteCode(fullNoteId: String, fullKeyBase64: String): NoteCode {
+        val shortCode = fullNoteId.take(5)
+        val shortKey = fullKeyBase64.take(6)
+        val displayCode = "$shortCode-$shortKey"
+        android.util.Log.d("VoidNote", "Code: $displayCode")
+        return NoteCode(
+            fullNoteId = fullNoteId,
+            fullKeyBase64 = fullKeyBase64,
+            shortCode = shortCode,
+            shortKey = shortKey,
+            displayCode = displayCode
+        )
     }
 }

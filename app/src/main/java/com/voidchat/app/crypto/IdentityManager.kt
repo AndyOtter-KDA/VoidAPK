@@ -51,6 +51,21 @@ object IdentityManager {
         }
     }
 
+    fun getPublicKeyBase64(): String? {
+        return try {
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+            val entry = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.PrivateKeyEntry
+            val publicKey = entry?.certificate?.publicKey
+            if (publicKey != null) {
+                Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun restoreFromPhrase(phrase: List<String>): Result<IdentityResult> {
         return try {
             if (phrase.size != 12) {
@@ -81,9 +96,15 @@ object IdentityManager {
             val bytes = privateKey?.encoded
             if (bytes != null) {
                 Base64.encodeToString(bytes, Base64.NO_WRAP)
+            } else if (privateKey != null) {
+                val challenge = "VoidChat-Identity-Verification-${getDisplayId()}".toByteArray()
+                val signer = java.security.Signature.getInstance("SHA256withECDSA")
+                signer.initSign(privateKey)
+                signer.update(challenge)
+                val signatureBytes = signer.sign()
+                Base64.encodeToString(signatureBytes, Base64.NO_WRAP)
             } else {
-                val displayId = getDisplayId() ?: "UNKNOWN_ID"
-                Base64.encodeToString("SECURE_PRIVATE_KEY_FALLBACK_FOR_$displayId".toByteArray(), Base64.NO_WRAP)
+                null
             }
         } catch (e: Exception) {
             null
@@ -91,7 +112,7 @@ object IdentityManager {
     }
 
     private fun deriveDisplayId(publicKey: PublicKey): String {
-        val bytes = publicKey.encoded ?: "void_mock_pubkey_seed_bytes".toByteArray()
+        val bytes = publicKey.encoded ?: java.util.UUID.randomUUID().toString().toByteArray()
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         val hex = digest.joinToString("") { "%02X".format(it) }.take(16)
         // Format XXXX-XXXX-XXXX-XXXX

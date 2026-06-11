@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.voidchat.app.crypto.NoteCryptoManager
+import com.voidchat.app.crypto.IdentityManager
 import com.voidchat.app.data.models.Note
 import com.voidchat.app.data.models.GroupChat
 import com.voidchat.app.data.models.GroupMember
@@ -19,7 +20,7 @@ import java.util.UUID
 sealed interface NoteUiState {
     object Idle : NoteUiState
     object Creating : NoteUiState
-    data class Created(val code: String, val hasPassword: Boolean, val password: String? = null) : NoteUiState
+    data class Created(val code: String) : NoteUiState
     object Reading : NoteUiState
     data class Read(val content: String) : NoteUiState
     object Destroyed : NoteUiState
@@ -111,7 +112,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     
                     val grpMember = GroupMember(
                         displayId = myDisplayId,
-                        publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                        publicKeyBase64 = IdentityManager.getPublicKeyBase64() ?: "",
                         role = "MEMBER",
                         joinedAt = System.currentTimeMillis()
                     )
@@ -127,7 +128,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createNote(text: String, password: String?, expiryOptionSeconds: Int) {
+    fun createNote(text: String, expiryOptionSeconds: Int) {
         if (text.trim().isEmpty()) {
             _state.value = NoteUiState.Error("Note content cannot be empty")
             return
@@ -136,45 +137,30 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = NoteUiState.Creating
             try {
                 // Generate a robust unique ID
-                val noteId = "note_${UUID.randomUUID().toString().hashCode().let { if (it < 0) -it else it }.toString().take(8)}"
-                val hasPassword = !password.isNullOrEmpty()
+                val noteId = UUID.randomUUID().toString().replace("-", "").lowercase()
 
-                // Encrypt payload using PBKDF2/AES-GCM
-                val cryptoResult = NoteCryptoManager.encryptNote(text, password)
+                // Encrypt payload using secure AES-GCM
+                val cryptoResult = NoteCryptoManager.encryptNote(text)
 
                 // Generate simple share code
-                val shareCode = NoteCryptoManager.generateNoteCode(noteId, cryptoResult.keyBase64, hasPassword)
+                val noteCode = NoteCryptoManager.generateNoteCode(noteId, cryptoResult.keyBase64)
 
                 // Store in-memory mapping
-                NoteCryptoManager.storeMapping(shareCode.take(5), noteId, cryptoResult.keyBase64)
+                NoteCryptoManager.storeMapping(noteCode.shortCode, noteId, cryptoResult.keyBase64)
 
                 // Compute expiration time
                 val expiresAtMillis = if (expiryOptionSeconds == 0) 0L else System.currentTimeMillis() + (expiryOptionSeconds * 1000L)
 
-                // Prepare note record
-                val note = Note(
-                    noteId = noteId,
+                // Upload to Firestore using shortCode as Document ID
+                FirestoreManager.uploadNote(
+                    noteCode = noteCode,
                     encryptedPayload = cryptoResult.encryptedPayload,
                     iv = cryptoResult.iv,
-                    createdAt = System.currentTimeMillis(),
-                    expiresAt = expiresAtMillis,
-                    maxViews = 1,
-                    currentViews = 0,
-                    destroyed = false,
-                    salt = cryptoResult.saltBase64,
-                    hasPassword = hasPassword,
-                    keyBase64 = cryptoResult.keyBase64,
-                    shortCode = noteId.take(5),
-                    shortKey = if (hasPassword) null else cryptoResult.keyBase64.filter { it.isLetterOrDigit() }.take(6)
-                )
-
-                // Upload
-                FirestoreManager.uploadNote(note) { uploadedId ->
+                    expiresAt = expiresAtMillis
+                ) { uploadedId ->
                     if (uploadedId.isNotEmpty()) {
                         _state.value = NoteUiState.Created(
-                            code = shareCode,
-                            hasPassword = hasPassword,
-                            password = password
+                            code = noteCode.displayCode
                         )
                     } else {
                         _state.value = NoteUiState.Error("Failed to upload secure note package to Firestore")
@@ -186,7 +172,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun readNote(shareCode: String, password: String?) {
+    fun readNote(shareCode: String) {
         val cleanCode = shareCode.trim()
         if (cleanCode.isEmpty()) {
             _state.value = NoteUiState.Error("Decryption code cannot be empty")
@@ -212,17 +198,10 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                         return@getNoteByShortCode
                     }
 
-                    if (note.hasPassword && password.isNullOrEmpty()) {
-                        _state.value = NoteUiState.Error("This note is protected with a cognitive password.")
-                        return@getNoteByShortCode
-                    }
-
                     val decryptedResult = NoteCryptoManager.decryptNote(
                         encryptedPayload = note.encryptedPayload,
                         iv = note.iv,
-                        keyBase64 = note.keyBase64,
-                        password = password,
-                        saltBase64 = note.salt
+                        keyBase64 = note.keyBase64
                     )
 
                     decryptedResult.fold(
@@ -233,7 +212,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                             _state.value = NoteUiState.Read(plaintext)
                         },
                         onFailure = {
-                            _state.value = NoteUiState.Error("Cognitive key decryption mismatch. Check code/password.")
+                            _state.value = NoteUiState.Error("Key decryption mismatch. Check code.")
                         }
                     )
                 }

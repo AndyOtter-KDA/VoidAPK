@@ -155,7 +155,7 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                     
                     val grpMember = GroupMember(
                         displayId = myDisplayId,
-                        publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                        publicKeyBase64 = com.voidchat.app.crypto.IdentityManager.getPublicKeyBase64() ?: "",
                         role = "MEMBER",
                         joinedAt = System.currentTimeMillis()
                     )
@@ -208,7 +208,7 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                 // Also add self as member
                 val grpMember = GroupMember(
                     displayId = finalMyDisplayId,
-                    publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                    publicKeyBase64 = com.voidchat.app.crypto.IdentityManager.getPublicKeyBase64() ?: "",
                     role = "ADMIN",
                     joinedAt = System.currentTimeMillis()
                 )
@@ -221,7 +221,7 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                     if (mbrId != finalMyDisplayId && mbrId.isNotEmpty()) {
                         val otherMbr = GroupMember(
                             displayId = mbrId,
-                            publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                            publicKeyBase64 = android.util.Base64.encodeToString("pubkey_$mbrId".toByteArray(), android.util.Base64.NO_WRAP),
                             role = "MEMBER",
                             joinedAt = System.currentTimeMillis()
                         )
@@ -398,7 +398,7 @@ class GroupChatViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.d("VoidFirestore", "addMemberByDisplayId: Starting join process for $memberDisplayId under group $currentGroupId")
                 val grpMember = GroupMember(
                     displayId = memberDisplayId,
-                    publicKeyBase64 = "MOCK_EX_PUBKEY_B64",
+                    publicKeyBase64 = android.util.Base64.encodeToString("pubkey_$memberDisplayId".toByteArray(), android.util.Base64.NO_WRAP),
                     role = "MEMBER",
                     joinedAt = System.currentTimeMillis()
                 )

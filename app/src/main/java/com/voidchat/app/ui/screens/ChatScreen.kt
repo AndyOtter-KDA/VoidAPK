@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -535,31 +536,46 @@ fun ChatScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedTextField(
-                                value = textInput,
-                                onValueChange = { textInput = it },
-                                enabled = !isInputDisabled,
-                                placeholder = {
-                                    Text(
-                                        text = if (isInputDisabled) "TUNNEL OFFLINE..." else "SEND SECURED PAYLOAD...",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        color = TextMuted
-                                    )
-                                },
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = NeonCyan,
-                                    unfocusedBorderColor = BorderDark,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary,
-                                    disabledBorderColor = BorderDark,
-                                    disabledTextColor = TextMuted
-                                ),
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                maxLines = 4
-                            )
+                            Box(
+                                modifier = if (isInputDisabled) {
+                                    Modifier
+                                        .weight(1f)
+                                        .clickable(
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            Toast.makeText(context, "Waiting for secure connection...", Toast.LENGTH_SHORT).show()
+                                        }
+                                } else {
+                                    Modifier.weight(1f)
+                                }
+                            ) {
+                                OutlinedTextField(
+                                    value = textInput,
+                                    onValueChange = { textInput = it },
+                                    enabled = !isInputDisabled,
+                                    placeholder = {
+                                        Text(
+                                            text = if (isInputDisabled) "TUNNEL OFFLINE..." else "SEND SECURED PAYLOAD...",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            color = TextMuted
+                                        )
+                                    },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = NeonCyan,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary,
+                                        disabledBorderColor = BorderDark,
+                                        disabledTextColor = TextMuted
+                                    ),
+                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    maxLines = 4
+                                )
+                            }
 
                             Spacer(modifier = Modifier.width(8.dp))
 

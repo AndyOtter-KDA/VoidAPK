@@ -37,8 +37,6 @@ fun CreateNoteScreen(
     modifier: Modifier = Modifier
 ) {
     var contentInput by remember { mutableStateOf("") }
-    var passwordInput by remember { mutableStateOf("") }
-    var isPasswordEnabled by remember { mutableStateOf(false) }
     
     // 0 = First read, 300 = 5 minutes, 3600 = 1 hour, 86400 = 24 hours
     var selectedLifetimeOption by remember { mutableStateOf(0) }
@@ -100,21 +98,12 @@ fun CreateNoteScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     // Success header components (green checkmark or lock)
-                    if (createdState.hasPassword) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Secured",
-                            tint = WarningYellow,
-                            modifier = Modifier.size(64.dp)
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Created",
-                            tint = MatrixGreen,
-                            modifier = Modifier.size(64.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Created",
+                        tint = MatrixGreen,
+                        modifier = Modifier.size(64.dp)
+                    )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -196,29 +185,7 @@ fun CreateNoteScreen(
                         )
                     }
 
-                    if (createdState.hasPassword) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Surface(
-                            color = VoidDarkNavy,
-                            border = BorderStroke(1.dp, WarningYellow),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "⚠️ You set a password: ${createdState.password}\nGive the password to the recipient separately.",
-                                    color = WarningYellow,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    lineHeight = 16.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
+
 
                     Spacer(modifier = Modifier.height(32.dp))
 
@@ -226,8 +193,6 @@ fun CreateNoteScreen(
                         onClick = {
                             viewModel.resetState()
                             contentInput = ""
-                            passwordInput = ""
-                            isPasswordEnabled = false
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                         border = BorderStroke(1.dp, BorderDark),
@@ -282,63 +247,7 @@ fun CreateNoteScreen(
                         )
                     }
 
-                    // Password toggle block
-                    Surface(
-                        color = VoidDarkNavy,
-                        border = BorderStroke(1.dp, BorderDark),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Lock, contentDescription = "Password option", tint = NeonCyan, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Password protect",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 13.sp,
-                                        color = TextPrimary
-                                    )
-                                }
-                                Switch(
-                                    checked = isPasswordEnabled,
-                                    onCheckedChange = { isPasswordEnabled = it },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = NeonCyan,
-                                        checkedTrackColor = VoidDarkBlue,
-                                        uncheckedThumbColor = TextMuted,
-                                        uncheckedTrackColor = VoidBlack
-                                    )
-                                )
-                            }
 
-                            if (isPasswordEnabled) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                OutlinedTextField(
-                                    value = passwordInput,
-                                    onValueChange = { passwordInput = it },
-                                    placeholder = { Text("Enter a password", fontFamily = FontFamily.Monospace, color = TextMuted, fontSize = 12.sp) },
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = NeonCyan,
-                                        unfocusedBorderColor = BorderDark,
-                                        focusedTextColor = TextPrimary,
-                                        unfocusedTextColor = TextPrimary
-                                    ),
-                                    singleLine = true,
-                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Self-destruct options drop / radio buttons
                     Surface(
@@ -427,8 +336,7 @@ fun CreateNoteScreen(
                     } else {
                         Button(
                             onClick = {
-                                val password = if (isPasswordEnabled && passwordInput.isNotEmpty()) passwordInput else null
-                                viewModel.createNote(contentInput, password, selectedLifetimeOption)
+                                viewModel.createNote(contentInput, selectedLifetimeOption)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                             shape = RoundedCornerShape(8.dp),

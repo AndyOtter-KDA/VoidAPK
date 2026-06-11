@@ -31,6 +31,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     private val prefs = PreferencesManager(application)
 
+    private val encryptedPrefs by lazy {
+        try {
+            val masterKeyAlias = androidx.security.crypto.MasterKeys.getOrCreate(androidx.security.crypto.MasterKeys.AES256_GCM_SPEC)
+            androidx.security.crypto.EncryptedSharedPreferences.create(
+                "voidchat_encrypted_keys",
+                masterKeyAlias,
+                getApplication(),
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            Log.e("VoidChatVM", "EncryptedSharedPreferences init failed: ${e.message}", e)
+            getApplication<Application>().getSharedPreferences("voidchat_secure_preferences_fallback", android.content.Context.MODE_PRIVATE)
+        }
+    }
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
@@ -86,7 +102,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // 2. Load key from preferences if available
-        val savedKeyBase64 = prefs.getChatKey(chatId)
+        val savedKeyBase64 = encryptedPrefs.getString("chat_key_$chatId", null)
         if (savedKeyBase64 != null) {
             try {
                 val keyBytes = android.util.Base64.decode(savedKeyBase64, android.util.Base64.NO_WRAP)
@@ -105,7 +121,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     if (isDeleted) {
                         Log.d("VoidChatVM", "Chat $chatId has been deleted globally by the participant")
                         db.messageDao().deleteMessagesByChatId(chatId)
-                        prefs.deleteChatKey(chatId)
+                        encryptedPrefs.edit().remove("chat_key_$chatId").apply()
                         _chatState.value = ChatState.ERROR("This secure channel has been terminated.")
                     }
                 }
@@ -131,6 +147,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         return@launch
                     }
+                    Log.d("VoidChatVM", "Key pair generated and uploaded for chat: $chatId")
 
                     listenForKeyExchange(chatId)
                 } catch (e: Exception) {
@@ -161,29 +178,26 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("VoidChatVM", "listenForKeyExchange snapshot error: ${error.message}", error)
-                    if (_messages.value.isEmpty()) {
-                        _chatState.value = ChatState.ERROR("Handshake connection failed: ${error.localizedMessage}")
-                    }
+                    _chatState.value = ChatState.ERROR("Handshake connection failed: ${error.localizedMessage}")
                     return@addSnapshotListener
                 }
                 if (snapshot != null && snapshot.exists()) {
                     val pubA = snapshot.getString("publicKeyA") ?: ""
                     val pubB = snapshot.getString("publicKeyB") ?: ""
-                    Log.d("VoidChatVM", "listenForKeyExchange update: publicKeyA is blank = ${pubA.isEmpty()}, publicKeyB is blank = ${pubB.isEmpty()}")
                     if (pubA.isNotEmpty() && pubB.isNotEmpty()) {
+                        Log.d("VoidChatVM", "Both public keys present — starting ECDH")
                         try {
                             val participantA = snapshot.getString("participantA") ?: ""
                             val otherPublicKey = if (participantA == myDisplayId) pubB else pubA
-                            Log.d("VoidChatVM", "listenForKeyExchange: both keys online. otherPublicKey length: ${otherPublicKey.length}")
-
+                            
                             val derivedKey = KeyExchangeManager.performKeyExchange(chatId, otherPublicKey)
                             if (derivedKey != null) {
                                 sharedKey = derivedKey
-                                _chatState.value = ChatState.ENCRYPTED
-                                Log.d("VoidChatVM", "listenForKeyExchange: ECDH succeeded. Key established! UI State is ENCRYPTED")
-                                
                                 val derivedKeyBase64 = android.util.Base64.encodeToString(derivedKey.encoded, android.util.Base64.NO_WRAP)
-                                prefs.saveChatKey(chatId, derivedKeyBase64)
+                                encryptedPrefs.edit().putString("chat_key_$chatId", derivedKeyBase64).apply()
+                                
+                                _chatState.value = ChatState.ENCRYPTED
+                                Log.d("VoidChatVM", "Key exchange complete — chat is encrypted")
 
                                 viewModelScope.launch {
                                     try {
@@ -194,76 +208,68 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                 }
                                 decryptMessages(_messages.value)
                             } else {
-                                Log.e("VoidChatVM", "listenForKeyExchange error: KeyExchangeManager performKeyExchange returned null")
-                                if (_messages.value.isEmpty()) {
-                                    _chatState.value = ChatState.ERROR("Deriving secure AES session key failed")
-                                }
+                                Log.e("VoidChatVM", "Deriving secure AES session key failed")
+                                _chatState.value = ChatState.ERROR("Deriving secure AES session key failed")
                             }
                         } catch (e: Exception) {
-                            Log.e("VoidChatVM", "listenForKeyExchange compilation error: ${e.message}", e)
-                            if (_messages.value.isEmpty()) {
-                                _chatState.value = ChatState.ERROR("Key exchange failed: ${e.localizedMessage}")
-                            }
+                            Log.e("VoidChatVM", "listenForKeyExchange ECDH failed: ${e.message}", e)
+                            _chatState.value = ChatState.ERROR("Key exchange failed: ${e.localizedMessage}")
                         }
                     } else {
-                        if (_messages.value.isEmpty()) {
-                            Log.d("VoidChatVM", "listenForKeyExchange status: WAITING_FOR_KEY_EXCHANGE")
-                            _chatState.value = ChatState.WAITING_FOR_KEY_EXCHANGE
-                        }
-                    }
-                } else {
-                    if (_messages.value.isEmpty()) {
-                        Log.d("VoidChatVM", "listenForKeyExchange status: Chat doc empty. WAITING_FOR_KEY_EXCHANGE")
                         _chatState.value = ChatState.WAITING_FOR_KEY_EXCHANGE
                     }
+                } else {
+                    _chatState.value = ChatState.WAITING_FOR_KEY_EXCHANGE
                 }
             }
     }
 
     fun loadMessages(chatId: String) {
-        Log.d("VoidChatVM", "loadMessages: Subscribing to message subcollection updates for chatId: $chatId")
         currentChatId = chatId
         viewModelScope.launch {
             try {
                 FirestoreManager.listenForMessages(chatId)
                     .collect { remoteMessages ->
-                        Log.d("VoidChatVM", "loadMessages flow collected: size = ${remoteMessages.size}")
-                        
-                        val localMsgs = db.messageDao().getUndestroyedMessages(chatId).associateBy { it.messageId }
-                        val key = sharedKey
+                        val savedKeyBase64 = encryptedPrefs.getString("chat_key_$chatId", null)
+                        val key = if (savedKeyBase64 != null) {
+                            try {
+                                val keyBytes = android.util.Base64.decode(savedKeyBase64, android.util.Base64.NO_WRAP)
+                                javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
+                            } catch (e: Exception) {
+                                null
+                            }
+                        } else {
+                            null
+                        }
+
                         val decryptedList = remoteMessages.map { msg ->
-                            if (msg.decryptedText.isNotEmpty()) {
-                                msg
-                            } else {
-                                val localMsg = localMsgs[msg.messageId]
-                                if (localMsg != null && localMsg.decryptedText.isNotEmpty()) {
-                                    localMsg
-                                } else if (key != null) {
-                                    val result = CryptoManager.decrypt(msg.encryptedPayload, msg.iv, key)
-                                    if (result.isSuccess) {
-                                        val plain = result.getOrNull() ?: ""
-                                        val updated = msg.copy(decryptedText = plain)
-                                        db.messageDao().insertMessage(updated)
-                                        updated
-                                    } else {
-                                        Log.e("VoidChatVM", "Failed to decrypt message ${msg.messageId}")
-                                        msg
-                                    }
+                            val localMsg = db.messageDao().getUndestroyedMessages(chatId).firstOrNull { it.messageId == msg.messageId }
+                            if (localMsg != null && localMsg.decryptedText.isNotEmpty() && !localMsg.decryptedText.contains("[Unable to decrypt]")) {
+                                localMsg
+                            } else if (key != null) {
+                                val result = CryptoManager.decrypt(msg.encryptedPayload, msg.iv, key)
+                                if (result.isSuccess) {
+                                    val plain = result.getOrNull() ?: ""
+                                    val updated = msg.copy(decryptedText = plain)
+                                    db.messageDao().insertMessage(updated)
+                                    updated
                                 } else {
-                                    msg
+                                    Log.e("VoidChatVM", "Decryption failed for message ${msg.messageId}")
+                                    msg.copy(decryptedText = "[Unable to decrypt]")
                                 }
+                            } else {
+                                msg.copy(decryptedText = "[Unable to decrypt]")
                             }
                         }
 
                         _messages.value = decryptedList
                         val newDecryptedMap = _decryptedMessages.value.toMutableMap()
                         decryptedList.forEach { msg ->
-                            if (msg.decryptedText.isNotEmpty()) {
-                                newDecryptedMap[msg.messageId] = msg.decryptedText
-                            }
+                            newDecryptedMap[msg.messageId] = msg.decryptedText
                         }
                         _decryptedMessages.value = newDecryptedMap
 
+                        Log.d("VoidChatVM", "Loaded ${decryptedList.size} messages, decrypted")
                         markUnreadMessagesAsRead(chatId, remoteMessages)
                     }
             } catch (e: Exception) {
@@ -334,20 +340,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String, selfDestructSeconds: Int) {
         if (currentChatId.isEmpty() || text.trim().isEmpty()) return
-        val key = sharedKey
         
         if (_chatState.value != ChatState.ENCRYPTED) {
-            Log.d("VoidChatVM", "sendMessage: Refused. Current state is: ${_chatState.value}")
             android.widget.Toast.makeText(getApplication(), "Waiting for secure connection", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        if (key == null) {
-            Log.e("VoidChatVM", "sendMessage: Refused. Error: established key is null")
+
+        val savedKeyBase64 = encryptedPrefs.getString("chat_key_$currentChatId", null)
+        if (savedKeyBase64 == null) {
+            Log.e("VoidChatVM", "sendMessage: Refused. Key is null in EncryptedSharedPreferences")
             return
         }
 
         viewModelScope.launch {
             try {
+                val keyBytes = android.util.Base64.decode(savedKeyBase64, android.util.Base64.NO_WRAP)
+                val key = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
+                
                 Log.d("VoidChatVM", "sendMessage: Encrypting plaintext with AES...")
                 val encrypted = CryptoManager.encrypt(text, key)
                 val messageId = "msg_${UUID.randomUUID()}"
@@ -371,7 +380,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 Log.d("VoidChatVM", "sendMessage: Dispatching encrypted message to Firestore node")
                 FirestoreManager.sendMessage(currentChatId, message)
-                Log.d("VoidChatVM", "sendMessage: Dispatch complete for messageId = $messageId")
+                Log.d("VoidChatVM", "Message encrypted and sent")
             } catch (e: Exception) {
                 Log.e("VoidChatVM", "sendMessage failed: ${e.message}", e)
                 _chatState.value = ChatState.ERROR("Message transmission failed: ${e.localizedMessage}")
