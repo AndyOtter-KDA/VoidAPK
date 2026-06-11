@@ -185,7 +185,7 @@ fun RestoreScreen(
                     lineHeight = 16.sp
                 )
 
-                // OPTION 1: Scan QR Code
+                // OPTION 1: Enter Transfer Code
                 Card(
                      modifier = Modifier.fillMaxWidth(),
                      colors = CardDefaults.cardColors(containerColor = VoidDarkBlue),
@@ -200,13 +200,13 @@ fun RestoreScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CameraAlt,
+                                imageVector = Icons.Default.ContentCopy,
                                 contentDescription = null,
                                 tint = NeonCyan,
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "OPTION 1: SCAN QR CODE",
+                                text = "OPTION 1: ENTER TRANSFER CODE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -215,7 +215,7 @@ fun RestoreScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Scan the ephemeral QR identity transmission directly from your previous phone's active screen.",
+                            text = "On your old device, go to Settings → Transfer to New Device to get a 6-digit active session code.",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
@@ -229,10 +229,10 @@ fun RestoreScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(44.dp)
-                                .testTag("scan_qr_restore_button")
+                                .testTag("enter_transfer_code_button")
                         ) {
                             Text(
-                                text = "SCAN QR",
+                                text = "ENTER TRANSFER CODE",
                                 color = VoidBlack,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,

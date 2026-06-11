@@ -960,4 +960,78 @@ object FirestoreManager {
             listener.remove()
         }
     }
+
+    suspend fun uploadTransfer(code: String, encryptedData: String, iv: String, expiresAt: Long) {
+        Log.d("VoidFirestore", "uploadTransfer: Uploading transfer document with code: $code")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            val data = hashMapOf(
+                "code" to code,
+                "encryptedData" to encryptedData,
+                "iv" to iv,
+                "createdAt" to System.currentTimeMillis(),
+                "expiresAt" to expiresAt
+            )
+            db.collection("transfers").document(code).set(data).await()
+            Log.d("VoidFirestore", "uploadTransfer SUCCESS for code: $code")
+        } catch (e: Exception) {
+            Log.e("VoidFirestore", "uploadTransfer FAILED for code: $code: ${e.message}", e)
+            throw e
+        }
+    }
+
+    fun fetchTransfer(code: String, callback: (com.voidchat.app.crypto.TransferData?) -> Unit) {
+        Log.d("VoidFirestore", "fetchTransfer: Fetching transfer document with code: $code")
+        val db = FirebaseFirestore.getInstance()
+        db.collection("transfers").document(code).get()
+            .addOnSuccessListener { doc ->
+                if (doc != null && doc.exists()) {
+                    val expiresAt = doc.getLong("expiresAt") ?: 0L
+                    if (System.currentTimeMillis() > expiresAt) {
+                        Log.d("VoidFirestore", "fetchTransfer: Document expired for code: $code")
+                        callback(null)
+                    } else {
+                        val encryptedData = doc.getString("encryptedData") ?: ""
+                        val iv = doc.getString("iv") ?: ""
+                        Log.d("VoidFirestore", "fetchTransfer SUCCESS for code: $code")
+                        callback(com.voidchat.app.crypto.TransferData(encryptedData, iv))
+                    }
+                } else {
+                    Log.d("VoidFirestore", "fetchTransfer: No document found for code: $code")
+                    callback(null)
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("VoidFirestore", "fetchTransfer FAILED for code: $code: ${e.message}", e)
+                callback(null)
+            }
+    }
+
+    suspend fun deleteTransfer(code: String) {
+        Log.d("VoidFirestore", "deleteTransfer: Deleting transfer document with code: $code")
+        val db = FirebaseFirestore.getInstance()
+        try {
+            db.collection("transfers").document(code).delete().await()
+            Log.d("VoidFirestore", "deleteTransfer SUCCESS for code: $code")
+        } catch (e: Exception) {
+            Log.e("VoidFirestore", "deleteTransfer FAILED for code: $code: ${e.message}", e)
+            throw e
+        }
+    }
+
+    fun listenForTransferClaimed(code: String, onClaimed: () -> Unit): com.google.firebase.firestore.ListenerRegistration {
+        Log.d("VoidFirestore", "listenForTransferClaimed: Registering listener for transfer document: $code")
+        val db = FirebaseFirestore.getInstance()
+        return db.collection("transfers").document(code)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("VoidFirestore", "listenForTransferClaimed error at code $code: ${error.message}", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && !snapshot.exists()) {
+                    Log.d("VoidFirestore", "listenForTransferClaimed: Document at code $code does not exist anymore. Deletion detected (claimed).")
+                    onClaimed()
+                }
+            }
+    }
 }

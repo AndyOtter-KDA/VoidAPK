@@ -218,7 +218,12 @@ fun NavGraph(
         composable(Routes.TRANSFER_OUT) {
             TransferOutScreen(
                 displayId = "VOID-E2E-COMPLY-NODE-LINE",
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToOnboarding = {
+                    navController.navigate(Routes.ONBOARDING) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
             )
         }
 
