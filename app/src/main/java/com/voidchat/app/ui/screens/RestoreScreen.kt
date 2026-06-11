@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +31,6 @@ import com.voidchat.app.ui.theme.*
 import com.voidchat.app.data.local.AppDatabase
 import com.voidchat.app.data.models.LocalIdentity
 import com.voidchat.app.data.local.PreferencesManager
-import com.voidchat.app.data.remote.FirestoreManager
 import kotlinx.coroutines.launch
 import java.io.InputStream
 import java.util.UUID
@@ -50,25 +48,74 @@ fun RestoreScreen(
     val scope = rememberCoroutineScope()
 
     var recoveryCodeInput by remember { mutableStateOf("") }
-    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var fileContentStr by remember { mutableStateOf("") }
     var selectedFileName by remember { mutableStateOf("") }
-    var filePasswordInput by remember { mutableStateOf("") }
-    var fileBytes by remember { mutableStateOf<ByteArray?>(null) }
     var isRestoring by remember { mutableStateOf(false) }
 
-    // Launcher for selecting safe .void backup files
+    // Launcher for selecting TXT or VOID backup files
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            selectedFileUri = uri
-            selectedFileName = uri.path?.substringAfterLast('/') ?: "backup_file.void"
+            selectedFileName = uri.path?.substringAfterLast('/') ?: "backup_file"
             try {
                 val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-                fileBytes = inputStream?.use { it.readBytes() }
-                Toast.makeText(context, "Selected file: $selectedFileName Checkpoint successful.", Toast.LENGTH_SHORT).show()
+                val rawStr = inputStream?.bufferedReader()?.use { it.readText() } ?: ""
+                fileContentStr = rawStr.trim()
+                Toast.makeText(context, "Loaded file successfully.", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to load file: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun executeRestore(code: String) {
+        if (isRestoring) return
+        isRestoring = true
+        scope.launch {
+            try {
+                // Call IdentityManager.restoreFromRecoveryCode
+                val res = IdentityManager.restoreFromRecoveryCode(code)
+                res.fold(
+                    onSuccess = { restoreResult ->
+                        // Log.d("RestoreScreen", "Restore result: Y")
+                        android.util.Log.d("RestoreScreen", "Restore result: success")
+
+                        val displayId = restoreResult.displayId
+                        val username = restoreResult.username
+
+                        // Write to database so system is completely registered
+                        val db = AppDatabase.getDatabase(context)
+                        val prefs = PreferencesManager(context)
+                        val pubKeyBase64 = IdentityManager.getPublicKeyBase64() ?: ""
+
+                        val localIdentity = LocalIdentity(
+                            id = UUID.randomUUID().toString(),
+                            keyPairAlias = "void_identity",
+                            publicKeyBase64 = pubKeyBase64,
+                            displayId = displayId,
+                            username = username,
+                            recoveryPhraseHash = UUID.randomUUID().toString().hashCode().toString(),
+                            createdAt = System.currentTimeMillis(),
+                            deviceName = android.os.Build.MODEL
+                        )
+                        db.identityDao().insertIdentity(localIdentity)
+                        prefs.username = username
+
+                        Toast.makeText(context, "Identity restored. Welcome back, $username.", Toast.LENGTH_LONG).show()
+                        onNavigateToHome()
+                    },
+                    onFailure = { err ->
+                        android.util.Log.d("RestoreScreen", "Restore result: fail")
+                        val errMsg = err.localizedMessage ?: err.message ?: "Invalid recovery code"
+                        Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
+                    }
+                )
+            } catch (e: Exception) {
+                android.util.Log.d("RestoreScreen", "Restore result: exception")
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isRestoring = false
             }
         }
     }
@@ -159,7 +206,7 @@ fun RestoreScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "SCAN QR CODE",
+                                text = "OPTION 1: SCAN QR CODE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -216,7 +263,7 @@ fun RestoreScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "PASTE RECOVERY CODE",
+                                text = "OPTION 2: PASTE RECOVERY CODE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -253,49 +300,15 @@ fun RestoreScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = {
-                                if (recoveryCodeInput.trim().isEmpty()) {
+                                val cleanInput = recoveryCodeInput.trim()
+                                // Log.d("RestoreScreen", "Pasted code length: X")
+                                android.util.Log.d("RestoreScreen", "Pasted code length: ${cleanInput.length}")
+                                
+                                if (cleanInput.isEmpty()) {
                                     Toast.makeText(context, "Please paste a recovery code first.", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                isRestoring = true
-                                scope.launch {
-                                    try {
-                                        val res = IdentityManager.restoreFromRecoveryCode(recoveryCodeInput.trim())
-                                        res.fold(
-                                            onSuccess = { displayId ->
-                                                // Success: create LocalIdentity in Room DB
-                                                val db = AppDatabase.getDatabase(context)
-                                                val prefs = PreferencesManager(context)
-                                                val username = prefs.username ?: "recovered_node"
-                                                val pubKeyBase64 = IdentityManager.getPublicKeyBase64() ?: ""
-
-                                                val localIdentity = LocalIdentity(
-                                                    id = UUID.randomUUID().toString(),
-                                                    keyPairAlias = "void_identity",
-                                                    publicKeyBase64 = pubKeyBase64,
-                                                    displayId = displayId,
-                                                    username = username,
-                                                    recoveryPhraseHash = UUID.randomUUID().toString().hashCode().toString(),
-                                                    createdAt = System.currentTimeMillis(),
-                                                    deviceName = android.os.Build.MODEL
-                                                )
-                                                db.identityDao().insertIdentity(localIdentity)
-                                                prefs.username = username
-
-                                                Toast.makeText(context, "Handshake successful! Welcome back $username.", Toast.LENGTH_LONG).show()
-                                                onNavigateToHome()
-                                            },
-                                            onFailure = { err ->
-                                                val errMsg = err.localizedMessage ?: err.message ?: "Invalid recovery code. Check the code and try again."
-                                                Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
-                                            }
-                                        )
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Restoration failure: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    } finally {
-                                        isRestoring = false
-                                    }
-                                }
+                                executeRestore(cleanInput)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                             shape = RoundedCornerShape(6.dp),
@@ -336,7 +349,7 @@ fun RestoreScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "RESTORE FROM FILE",
+                                text = "OPTION 3: RESTORE FROM FILE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -345,7 +358,7 @@ fun RestoreScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Restore from an encrypted .void identity backup file downloaded or stored on this system.",
+                            text = "Restore from a plain text export file (.void or .txt) downloaded or stored on this system.",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
@@ -362,81 +375,18 @@ fun RestoreScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = if (selectedFileUri == null) "CHOOSE FILE" else "FILE: $selectedFileName",
+                                text = if (selectedFileName.isEmpty()) "CHOOSE FILE" else "FILE: $selectedFileName",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
-                        if (selectedFileUri != null) {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            OutlinedTextField(
-                                value = filePasswordInput,
-                                onValueChange = { filePasswordInput = it },
-                                label = { Text("BACKUP PASSWORD", fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
-                                visualTransformation = PasswordVisualTransformation(),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = NeonCyan,
-                                    unfocusedBorderColor = BorderDark,
-                                    focusedTextColor = TextPrimary,
-                                    unfocusedTextColor = TextPrimary
-                                ),
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
+                        if (fileContentStr.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = {
-                                    val bytes = fileBytes
-                                    if (bytes == null) {
-                                        Toast.makeText(context, "No file bytes loaded.", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    if (filePasswordInput.trim().isEmpty()) {
-                                        Toast.makeText(context, "Backup password is required.", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    isRestoring = true
-                                    scope.launch {
-                                        try {
-                                            val res = IdentityManager.importIdentityFromFile(bytes, filePasswordInput)
-                                            res.fold(
-                                                onSuccess = { displayId ->
-                                                    // Success: retrieve recovered username
-                                                    val db = AppDatabase.getDatabase(context)
-                                                    val prefs = PreferencesManager(context)
-                                                    val username = prefs.username ?: "recovered_node"
-                                                    val pubKeyBase64 = IdentityManager.getPublicKeyBase64() ?: ""
-
-                                                    val localIdentity = LocalIdentity(
-                                                        id = UUID.randomUUID().toString(),
-                                                        keyPairAlias = "void_identity",
-                                                        publicKeyBase64 = pubKeyBase64,
-                                                        displayId = displayId,
-                                                        username = username,
-                                                        recoveryPhraseHash = UUID.randomUUID().toString().hashCode().toString(),
-                                                        createdAt = System.currentTimeMillis(),
-                                                        deviceName = android.os.Build.MODEL
-                                                    )
-                                                    db.identityDao().insertIdentity(localIdentity)
-                                                    prefs.username = username
-
-                                                    Toast.makeText(context, "Identity imported successfully. Welcome $username.", Toast.LENGTH_LONG).show()
-                                                    onNavigateToHome()
-                                                },
-                                                onFailure = { err ->
-                                                    Toast.makeText(context, "Wrong password or invalid backup file", Toast.LENGTH_LONG).show()
-                                                }
-                                            )
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Wrong password or invalid backup file", Toast.LENGTH_LONG).show()
-                                        } finally {
-                                            isRestoring = false
-                                        }
-                                    }
+                                    executeRestore(fileContentStr)
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                                 shape = RoundedCornerShape(6.dp),
@@ -449,7 +399,7 @@ fun RestoreScreen(
                                     CircularProgressIndicator(color = VoidBlack, modifier = Modifier.size(16.dp))
                                 } else {
                                     Text(
-                                        text = "RESTORE",
+                                        text = "RESTORE FROM LOADED FILE",
                                         color = VoidBlack,
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,

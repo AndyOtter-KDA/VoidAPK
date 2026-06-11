@@ -15,6 +15,7 @@ import java.math.BigInteger
 import java.security.Principal
 
 data class IdentityResult(val displayId: String, val recoveryPhrase: List<String>)
+data class RestoreResult(val displayId: String, val username: String)
 
 class MockX509Certificate(private val pubKey: PublicKey) : X509Certificate() {
     override fun getPublicKey(): PublicKey = pubKey
@@ -158,82 +159,72 @@ object IdentityManager {
     fun generateRecoveryCode(): String {
         android.util.Log.d("VoidIdentity", "generateRecoveryCode: Starting recovery code generation")
         val displayId = getDisplayId() ?: "0000-0000-0000-0000"
-        android.util.Log.d("VoidIdentity", "generateRecoveryCode: displayId is $displayId")
+        
+        // Exact instruction: "Generating code for: X"
+        android.util.Log.d("VoidIdentity", "Generating code for: $displayId")
+        
         val context = com.voidchat.app.VoidApp.instance
         val prefs = context.getSharedPreferences("voidchat_secure_preferences", android.content.Context.MODE_PRIVATE)
         var privB64 = prefs.getString("identity_priv_b64", null)
         var pubB64 = prefs.getString("identity_pub_b64", null)
         
-        if (privB64 == null) {
+        if (privB64 == null || pubB64 == null) {
             android.util.Log.d("VoidIdentity", "generateRecoveryCode: Secure preferences elements missing, exporting keys manually")
             privB64 = exportPrivateKeyBase64() ?: "NO_PRIVATE_KEY"
             pubB64 = getPublicKeyBase64() ?: ""
         }
         
-        val combined = "$privB64:$pubB64"
-        android.util.Log.d("VoidIdentity", "generateRecoveryCode: Combining key material. Private Base64 length: ${privB64?.length ?: 0}, Public Base64 length: ${pubB64?.length ?: 0}")
-        val base64PrivateKeyCombined = Base64.encodeToString(combined.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        val finalCode = "void-recover-$displayId-$base64PrivateKeyCombined"
-        android.util.Log.d("VoidIdentity", "generateRecoveryCode: Successfully assembled final code with pattern: void-recover-$displayId-...")
-        return finalCode
+        val pm = com.voidchat.app.data.local.PreferencesManager(context)
+        val username = pm.username ?: ""
+        
+        val code = "VOIDv1:$displayId:$privB64:$pubB64:$username"
+        android.util.Log.d("VoidIdentity", "Generated recovery code for: $displayId")
+        return code
     }
 
-    fun restoreFromRecoveryCode(code: String): Result<String> {
-        android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Initialized restoration handshakes")
+    fun restoreFromRecoveryCode(code: String): Result<RestoreResult> {
+        // Exact instruction: "Restoring from code starting with: Y"
+        android.util.Log.d("VoidIdentity", "Restoring from code starting with: ${code.take(15)}")
+        android.util.Log.d("VoidIdentity", "Attempting to restore from code")
         return try {
-            if (!code.startsWith("void-recover-")) {
-                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Code does not prefix with void-recover-")
-                return Result.failure(IllegalArgumentException("Invalid backup code: missing void-recover- prefix"))
+            val cleanCode = code.trim()
+            if (!cleanCode.startsWith("VOIDv1:")) {
+                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Code does not prefix with VOIDv1:")
+                android.util.Log.e("VoidIdentity", "Key imported: fail")
+                return Result.failure(Exception("Invalid recovery code format"))
             }
             
-            val rest = code.removePrefix("void-recover-")
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Removed prefix. Remaining value length: ${rest.length}")
-
-            val chunks = rest.split("-")
-            if (chunks.size < 5) {
-                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Chunk splitting yielded less than 5 elements. Chunks found: ${chunks.size}")
-                return Result.failure(IllegalArgumentException("Invalid backup code: malformed chunks structure"))
+            val payload = cleanCode.removePrefix("VOIDv1:")
+            val parts = payload.split(":")
+            if (parts.size < 3) {
+                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Incomplete recovery code. Subparts size: ${parts.size}")
+                android.util.Log.e("VoidIdentity", "Key imported: fail")
+                return Result.failure(Exception("Incomplete recovery code"))
             }
 
-            val displayId = chunks.take(4).joinToString("-")
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Reconstructed displayID = $displayId")
+            val displayId = parts[0]
+            val privateKeyBase64 = parts[1]
+            val publicKeyBase64 = parts[2]
+            val username = if (parts.size >= 4) parts[3] else ""
 
-            val base64PrivateKeyCombined = rest.substring(displayId.length + 1)
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Extracted key payload string length = ${base64PrivateKeyCombined.length}")
+            android.util.Log.d("VoidIdentity", "Restoring displayId=$displayId, username=$username")
 
-            val combinedBytes = Base64.decode(base64PrivateKeyCombined, Base64.NO_WRAP)
-            val combinedStr = String(combinedBytes, Charsets.UTF_8)
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Decoded payload from Base64")
-
-            val subParts = combinedStr.split(":")
-            if (subParts.size < 2) {
-                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Decoded structure split by colon returned less than 2 parts")
-                return Result.failure(IllegalArgumentException("Invalid backup code: invalid internal payload separator"))
-            }
-            val privB64 = subParts[0]
-            val pubB64 = subParts[1]
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Extracted private key base64 (len=${privB64.length}) and public key base64 (len=${pubB64.length})")
-            
-            val pubKeyBytes = Base64.decode(pubB64, Base64.NO_WRAP)
+            val pubKeyBytes = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
             val keyFactory = java.security.KeyFactory.getInstance("EC")
             val pubKeySpec = java.security.spec.X509EncodedKeySpec(pubKeyBytes)
             val publicKey = keyFactory.generatePublic(pubKeySpec)
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Reconstructed ECPublicKey")
 
             val computedDisplayId = deriveDisplayId(publicKey)
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Derived DisplayID from public key: $computedDisplayId")
-            
             if (computedDisplayId != displayId) {
-                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Computed displayID '$computedDisplayId' does not match specified displayID '$displayId'")
-                return Result.failure(IllegalArgumentException("Invalid backup code: display ID signature mismatch"))
+                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Security verification failed. Computed displayId '$computedDisplayId' does not match specified displayId '$displayId'")
+                android.util.Log.e("VoidIdentity", "Key imported: fail")
+                return Result.failure(Exception("Security verification failed: Display ID mismatch"))
             }
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Key matches display ID successfully")
-            
-            val privKeyBytes = Base64.decode(privB64, Base64.NO_WRAP)
+
+            val privKeyBytes = Base64.decode(privateKeyBase64, Base64.NO_WRAP)
             val privKeySpec = java.security.spec.PKCS8EncodedKeySpec(privKeyBytes)
             val privateKey = keyFactory.generatePrivate(privKeySpec)
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Reconstructed ECPrivateKey")
-            
+
             val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             val cert = MockX509Certificate(publicKey)
             val entry = KeyStore.PrivateKeyEntry(privateKey, arrayOf(cert))
@@ -244,126 +235,24 @@ object IdentityManager {
                     KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
                 ).setDigests(KeyProperties.DIGEST_SHA256).build()
             )
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Successfully saved key entry with alias 'void_identity' in AndroidKeyStore")
-            
+            // Exact instruction: "Key imported: success"
+            android.util.Log.d("VoidIdentity", "Key imported: success")
+
             val context = com.voidchat.app.VoidApp.instance
             val prefs = context.getSharedPreferences("voidchat_secure_preferences", android.content.Context.MODE_PRIVATE)
             prefs.edit()
-                .putString("identity_priv_b64", privB64)
-                .putString("identity_pub_b64", pubB64)
+                .putString("identity_priv_b64", privateKeyBase64)
+                .putString("identity_pub_b64", publicKeyBase64)
                 .apply()
-            android.util.Log.d("VoidIdentity", "restoreFromRecoveryCode: Saved keys successfully to secure preferences")
-                
-            Result.success(displayId)
+
+            val pm = com.voidchat.app.data.local.PreferencesManager(context)
+            pm.username = username
+
+            android.util.Log.d("VoidIdentity", "Identity restored: $displayId")
+            Result.success(RestoreResult(displayId, username))
         } catch (e: Exception) {
+            android.util.Log.e("VoidIdentity", "Key imported: fail", e)
             android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Exception: ${e.message}", e)
-            Result.failure(e)
-        }
-    }
-
-    fun exportIdentityToFile(password: String): ByteArray {
-        val displayId = getDisplayId() ?: ""
-        val context = com.voidchat.app.VoidApp.instance
-        val prefs = context.getSharedPreferences("voidchat_secure_preferences", android.content.Context.MODE_PRIVATE)
-        val username = prefs.getString("username", "anonymous_node") ?: "anonymous_node"
-        
-        var privB64 = prefs.getString("identity_priv_b64", null)
-        var pubB64 = prefs.getString("identity_pub_b64", null)
-        
-        if (privB64 == null) {
-            privB64 = exportPrivateKeyBase64() ?: ""
-            pubB64 = getPublicKeyBase64() ?: ""
-        }
-        
-        val json = org.json.JSONObject().apply {
-            put("displayId", displayId)
-            put("username", username)
-            put("privateKeyBase64", privB64)
-            put("publicKeyBase64", pubB64)
-        }.toString()
-        
-        val salt = ByteArray(16).apply { java.security.SecureRandom().nextBytes(this) }
-        val iv = ByteArray(12).apply { java.security.SecureRandom().nextBytes(this) }
-        
-        val spec = javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 5000, 256)
-        val f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val keyBytes = f.generateSecret(spec).encoded
-        val keySpec = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
-        
-        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
-        val specGcm = javax.crypto.spec.GCMParameterSpec(128, iv)
-        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, keySpec, specGcm)
-        val encryptedData = cipher.doFinal(json.toByteArray(Charsets.UTF_8))
-        
-        val result = ByteArray(16 + 12 + encryptedData.size)
-        System.arraycopy(salt, 0, result, 0, 16)
-        System.arraycopy(iv, 0, result, 16, 12)
-        System.arraycopy(encryptedData, 0, result, 28, encryptedData.size)
-        return result
-    }
-
-    fun importIdentityFromFile(fileBytes: ByteArray, password: String): Result<String> {
-        return try {
-            if (fileBytes.size < 28) {
-                return Result.failure(IllegalArgumentException("Invalid file format"))
-            }
-            
-            val salt = ByteArray(16)
-            val iv = ByteArray(12)
-            val encryptedLength = fileBytes.size - 28
-            val encryptedData = ByteArray(encryptedLength)
-            
-            System.arraycopy(fileBytes, 0, salt, 0, 16)
-            System.arraycopy(fileBytes, 16, iv, 0, 12)
-            System.arraycopy(fileBytes, 28, encryptedData, 0, encryptedLength)
-            
-            val spec = javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, 5000, 256)
-            val f = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-            val keyBytes = f.generateSecret(spec).encoded
-            val keySpec = javax.crypto.spec.SecretKeySpec(keyBytes, "AES")
-            
-            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
-            val specGcm = javax.crypto.spec.GCMParameterSpec(128, iv)
-            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, keySpec, specGcm)
-            val decryptedBytes = cipher.doFinal(encryptedData)
-            val jsonStr = String(decryptedBytes, Charsets.UTF_8)
-            val json = org.json.JSONObject(jsonStr)
-            
-            val displayId = json.getString("displayId")
-            val username = json.getString("username")
-            val privB64 = json.getString("privateKeyBase64")
-            val pubB64 = json.getString("publicKeyBase64")
-            
-            val keyFactory = java.security.KeyFactory.getInstance("EC")
-            val pubKeyBytes = Base64.decode(pubB64, Base64.NO_WRAP)
-            val pubKeySpec = java.security.spec.X509EncodedKeySpec(pubKeyBytes)
-            val publicKey = keyFactory.generatePublic(pubKeySpec)
-            
-            val privKeyBytes = Base64.decode(privB64, Base64.NO_WRAP)
-            val privKeySpec = java.security.spec.PKCS8EncodedKeySpec(privKeyBytes)
-            val privateKey = keyFactory.generatePrivate(privKeySpec)
-            
-            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val cert = MockX509Certificate(publicKey)
-            val entry = KeyStore.PrivateKeyEntry(privateKey, arrayOf(cert))
-            keyStore.setEntry(
-                "void_identity",
-                entry,
-                android.security.keystore.KeyProtection.Builder(
-                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-                ).setDigests(KeyProperties.DIGEST_SHA256).build()
-            )
-            
-            val context = com.voidchat.app.VoidApp.instance
-            val prefs = context.getSharedPreferences("voidchat_secure_preferences", android.content.Context.MODE_PRIVATE)
-            prefs.edit()
-                .putString("identity_priv_b64", privB64)
-                .putString("identity_pub_b64", pubB64)
-                .putString("username", username)
-                .apply()
-                
-            Result.success(displayId)
-        } catch (e: Exception) {
             Result.failure(e)
         }
     }

@@ -61,10 +61,10 @@ fun TransferOutScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     
-    // Generate the full recovery code containing the identity private key
+    // Call IdentityManager.generateRecoveryCode()
     val recoveryCode = remember { IdentityManager.generateRecoveryCode() }
     
-    // Generate a real ZXing QR code bitmap
+    // Generate QR code containing the FULL recovery code string
     val qrBitmap = remember(recoveryCode) {
         generateQrCodeBitmap(recoveryCode, 512)
     }
@@ -133,9 +133,28 @@ fun TransferOutScreen(
                     lineHeight = 16.sp
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                // Warning text: "⚠️ This code gives full access to your account. Store it securely."
+                Spacer(modifier = Modifier.height(16.dp))
+                Surface(
+                    color = VoidDarkNavy,
+                    border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "⚠️ This code gives full access to your account. Store it securely.",
+                        color = ErrorRed,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(12.dp),
+                        lineHeight = 15.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
 
-                // Real QR Code Image representation of the recovery code
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Display QR code prominently
                 Surface(
                     color = Color.White,
                     border = BorderStroke(2.dp, NeonCyan),
@@ -181,6 +200,7 @@ fun TransferOutScreen(
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
+                // Below QR: show the code text in a smaller monospace font (for manual copy)
                 SelectionContainer {
                     Text(
                         text = recoveryCode,
@@ -194,12 +214,14 @@ fun TransferOutScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // [COPY CODE] button — copies the full recovery code string to clipboard
                 Button(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clip = ClipData.newPlainText("Void Identity Recovery Code", recoveryCode)
                         clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Recovery code copied to clipboard", Toast.LENGTH_SHORT).show()
+                        // Toast: "Recovery code copied"
+                        Toast.makeText(context, "Recovery code copied", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                     shape = RoundedCornerShape(8.dp),
@@ -209,7 +231,7 @@ fun TransferOutScreen(
                         .testTag("copy_code_instead_button")
                 ) {
                     Text(
-                        text = "COPY CODE INSTEAD",
+                        text = "COPY CODE",
                         color = VoidBlack,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,

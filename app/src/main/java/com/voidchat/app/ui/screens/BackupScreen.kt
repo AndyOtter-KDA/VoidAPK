@@ -23,16 +23,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voidchat.app.crypto.IdentityManager
 import com.voidchat.app.ui.theme.*
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,9 +39,6 @@ fun BackupScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-
-    var filePassword by remember { mutableStateOf("") }
-    var showPasswordProgress by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -113,7 +106,25 @@ fun BackupScreen(
                     lineHeight = 16.sp
                 )
 
-                // OPTION 1: Move to New Device
+                // Warning Text: "⚠️ This code gives full access to your account. Store it securely."
+                Surface(
+                    color = VoidDarkNavy,
+                    border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "⚠️ This code gives full access to your account. Store it securely.",
+                        color = ErrorRed,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(12.dp),
+                        lineHeight = 15.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // OPTION 1: Transfer to New Device
                 Card(
                      modifier = Modifier.fillMaxWidth(),
                      colors = CardDefaults.cardColors(containerColor = VoidDarkBlue),
@@ -127,9 +138,14 @@ fun BackupScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("📱➡️📱", fontSize = 24.sp)
+                            Icon(
+                                imageVector = Icons.Default.PhoneAndroid,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.size(24.dp)
+                            )
                             Text(
-                                text = "MOVE TO NEW DEVICE",
+                                text = "OPTION 1: TRANSFER TO NEW DEVICE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -155,7 +171,7 @@ fun BackupScreen(
                                 .testTag("transfer_out_button")
                         ) {
                             Text(
-                                text = "TRANSFER IDENTITY",
+                                text = "SHOW QR",
                                 color = VoidBlack,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
@@ -186,7 +202,7 @@ fun BackupScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "COPY RECOVERY CODE",
+                                text = "OPTION 2: COPY RECOVERY CODE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -195,31 +211,12 @@ fun BackupScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Copy a short secure code you can paste anywhere. Save it in a password manager or offline notes app.",
+                            text = "Copy a secure recovery code package to paste into a secure offline location.",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 15.sp
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // Copy Warning Text
-                        Surface(
-                            color = VoidDarkNavy,
-                            border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "⚠️ Anyone with this code can access your account. Store it securely.",
-                                color = ErrorRed,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(12.dp),
-                                lineHeight = 14.sp
-                            )
-                        }
-                        
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = {
@@ -227,7 +224,7 @@ fun BackupScreen(
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 val clip = ClipData.newPlainText("Void Identity Recovery Code", code)
                                 clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Recovery code copied. Save it somewhere safe.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Recovery code copied", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                             shape = RoundedCornerShape(6.dp),
@@ -268,7 +265,7 @@ fun BackupScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Text(
-                                text = "SAVE TO DEVICE",
+                                text = "OPTION 3: SAVE TO DEVICE",
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
@@ -277,62 +274,34 @@ fun BackupScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Save an encrypted, hardware-isolated backup file to your local phone storage drive.",
+                            text = "Save a plain-text backup file containing your recovery code to your local Downloads folder.",
                             color = TextSecondary,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 15.sp
                         )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        OutlinedTextField(
-                            value = filePassword,
-                            onValueChange = { filePassword = it },
-                            label = { Text("ENCRYPTION PASSWORD (REQUIRED)", fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = NeonCyan,
-                                unfocusedBorderColor = BorderDark,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            ),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = {
-                                if (filePassword.trim().isEmpty()) {
-                                    Toast.makeText(context, "Password is required to secure the backup file.", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                showPasswordProgress = true
                                 try {
-                                    val bytes = IdentityManager.exportIdentityToFile(filePassword)
+                                    val code = IdentityManager.generateRecoveryCode()
                                     val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
                                     if (!downloadsDir.exists()) {
                                         downloadsDir.mkdirs()
                                     }
-                                    val file = File(downloadsDir, "VoidBackup_2026_06_11.void")
-                                    file.writeBytes(bytes)
-                                    Toast.makeText(context, "Backup saved to Downloads folder", Toast.LENGTH_LONG).show()
-                                    Toast.makeText(context, "Remember your password. You'll need it to restore.", Toast.LENGTH_LONG).show()
+                                    val file = File(downloadsDir, "VoidBackup.txt")
+                                    file.writeText(code)
+                                    Toast.makeText(context, "Backup saved to Downloads/VoidBackup.txt", Toast.LENGTH_LONG).show()
                                 } catch (e: Exception) {
                                     try {
                                         val fallbackDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
-                                        val file = File(fallbackDir, "VoidBackup_2026_06_11.void")
-                                        val bytes = IdentityManager.exportIdentityToFile(filePassword)
-                                        file.writeBytes(bytes)
-                                        Toast.makeText(context, "Backup saved to App Downloads (External Storage Restricted)", Toast.LENGTH_LONG).show()
-                                        Toast.makeText(context, "Remember your password. You'll need it to restore.", Toast.LENGTH_LONG).show()
+                                        val file = File(fallbackDir, "VoidBackup.txt")
+                                        val code = IdentityManager.generateRecoveryCode()
+                                        file.writeText(code)
+                                        Toast.makeText(context, "Backup saved to Downloads/VoidBackup.txt", Toast.LENGTH_LONG).show()
                                     } catch (ex: Exception) {
                                         Toast.makeText(context, "Backup write exception: ${ex.message}", Toast.LENGTH_SHORT).show()
                                     }
-                                } finally {
-                                    showPasswordProgress = false
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),

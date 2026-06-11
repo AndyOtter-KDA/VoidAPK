@@ -182,8 +182,9 @@ fun TransferInScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
-    var recoveryCodeInput by remember { mutableStateOf("") }
+    
     var isImporting by remember { mutableStateOf(false) }
+    var restorationError by remember { mutableStateOf<String?>(null) }
 
     // Read camera permission status
     var hasCameraPermission by remember {
@@ -211,14 +212,25 @@ fun TransferInScreen(
     fun handleCodeRestoration(cleanCode: String) {
         if (isImporting) return
         isImporting = true
+        restorationError = null
+        
+        // 2. Log.d("VoidTransfer", "QR scanned: X")
+        android.util.Log.d("VoidTransfer", "QR scanned: $cleanCode")
+        
         scope.launch {
             try {
+                // 3. Call IdentityManager.restoreFromRecoveryCode
                 val res = IdentityManager.restoreFromRecoveryCode(cleanCode)
                 res.fold(
-                    onSuccess = { displayId ->
+                    onSuccess = { restoreResult ->
+                        // 4. If success: "Identity restored. Welcome back, {username}." → navigate to Home
+                        android.util.Log.d("VoidTransfer", "Restore result: success")
+                        
+                        val displayId = restoreResult.displayId
+                        val username = restoreResult.username
+                        
                         val db = AppDatabase.getDatabase(context)
                         val prefs = PreferencesManager(context)
-                        val username = prefs.username ?: "recovered_node"
                         val pubKeyBase64 = IdentityManager.getPublicKeyBase64() ?: ""
 
                         val localIdentity = LocalIdentity(
@@ -234,18 +246,19 @@ fun TransferInScreen(
                         db.identityDao().insertIdentity(localIdentity)
                         prefs.username = username
 
-                        Toast.makeText(context, "Identity restored. Welcome back.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Identity restored. Welcome back, $username.", Toast.LENGTH_LONG).show()
                         onNavigateToHome()
                     },
                     onFailure = { err ->
-                        val errMsg = err.localizedMessage ?: err.message ?: "Invalid recovery code"
-                        Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
+                        // 5. If failure: show the error message. "Error: {message}" with [TRY AGAIN] button
+                        android.util.Log.e("VoidTransfer", "Restore result: fail", err)
+                        restorationError = err.localizedMessage ?: err.message ?: "Invalid recovery code"
                         isImporting = false
                     }
                 )
             } catch (e: Exception) {
-                val errMsg = e.localizedMessage ?: e.message ?: "Handshake failed"
-                Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
+                android.util.Log.e("VoidTransfer", "Restore result: exception", e)
+                restorationError = e.localizedMessage ?: e.message ?: "Handshake failed"
                 isImporting = false
             }
         }
@@ -296,112 +309,167 @@ fun TransferInScreen(
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Point camera sensor to the Migration QR displayed on your old device or paste the recovery code raw value below.",
+                    text = "Point camera sensor to the Migration QR displayed on your old device.",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
-                    lineHeight = 18.sp
+                    lineHeight = 18.sp,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Camera Scan Finder Port
-                Surface(
-                    color = VoidDarkNavy,
-                    border = BorderStroke(1.dp, NeonCyan),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .size(260.dp)
-                        .padding(vertical = 16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                // Error State Display
+                if (restorationError != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = VoidDarkNavy),
+                        border = BorderStroke(1.dp, ErrorRed)
                     ) {
-                        if (hasCameraPermission) {
-                            CameraPreview(
-                                onQrCodeScanned = { decodedString ->
-                                    if (!isImporting) {
-                                        android.util.Log.d("VoidChatScan", "Decoded scanned: $decodedString")
-                                        handleCodeRestoration(decodedString.trim())
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize()
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "RESTORE FAILURE",
+                                color = ErrorRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(bottom = 8.dp)
                             )
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(16.dp)
-                                    .background(VoidDarkNavy),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                            Text(
+                                text = "Error: ${restorationError}",
+                                color = TextPrimary,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                            Button(
+                                onClick = {
+                                    restorationError = null
+                                    isImporting = false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
                             ) {
                                 Text(
-                                    text = "Camera Permission Required",
-                                    color = ErrorRed,
-                                    fontSize = 11.sp,
+                                    text = "TRY AGAIN",
+                                    color = VoidBlack,
                                     fontFamily = FontFamily.Monospace,
-                                    textAlign = TextAlign.Center
+                                    fontWeight = FontWeight.Bold
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = { permissionLauncher.launch(android.Manifest.permission.CAMERA) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                                    shape = RoundedCornerShape(4.dp)
+                            }
+                        }
+                    }
+                } else if (isImporting) {
+                    Box(
+                        modifier = Modifier
+                            .size(260.dp)
+                            .background(VoidDarkNavy, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = NeonCyan)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "Restoring identity...",
+                                color = NeonCyan,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    // Camera Scan Finder Port
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(1.dp, NeonCyan),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .size(260.dp)
+                            .padding(vertical = 16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (hasCameraPermission) {
+                                CameraPreview(
+                                    onQrCodeScanned = { decodedString ->
+                                        if (!isImporting && restorationError == null) {
+                                            handleCodeRestoration(decodedString.trim())
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp)
+                                        .background(VoidDarkNavy),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Text(
-                                        text = "GRANT",
-                                        fontFamily = FontFamily.Monospace,
-                                        color = VoidBlack,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-
-                        // Overlay corners lines
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val l = 30.dp.toPx()
-                            val t = 4.dp.toPx()
-                            // Top Left
-                            drawLine(color = NeonCyan, start = Offset(0f, 0f), end = Offset(l, 0f), strokeWidth = t)
-                            drawLine(color = NeonCyan, start = Offset(0f, 0f), end = Offset(0f, l), strokeWidth = t)
-
-                            // Top Right
-                            drawLine(color = NeonCyan, start = Offset(size.width, 0f), end = Offset(size.width - l, 0f), strokeWidth = t)
-                            drawLine(color = NeonCyan, start = Offset(size.width, 0f), end = Offset(size.width, l), strokeWidth = t)
-
-                            // Bottom Left
-                            drawLine(color = NeonCyan, start = Offset(0f, size.height), end = Offset(l, size.height), strokeWidth = t)
-                            drawLine(color = NeonCyan, start = Offset(0f, size.height), end = Offset(0f, size.height - l), strokeWidth = t)
-
-                            // Bottom Right
-                            drawLine(color = NeonCyan, start = Offset(size.width, size.height), end = Offset(size.width - l, size.height), strokeWidth = t)
-                            drawLine(color = NeonCyan, start = Offset(size.width, size.height), end = Offset(size.width, size.height - l), strokeWidth = t)
-                        }
-
-                        if (isImporting) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(VoidBlack.copy(alpha = 0.7f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CircularProgressIndicator(color = NeonCyan)
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        "Restoring identity...",
-                                        color = NeonCyan,
-                                        fontFamily = FontFamily.Monospace,
+                                        text = "Camera permission required",
+                                        color = ErrorRed,
                                         fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontFamily = FontFamily.Monospace,
+                                        textAlign = TextAlign.Center
                                     )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Button(
+                                        onClick = {
+                                            // Handle camera permission: if denied, show "Camera permission required" with [OPEN SETTINGS] button
+                                            try {
+                                                val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                permissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "OPEN SETTINGS",
+                                            fontFamily = FontFamily.Monospace,
+                                            color = VoidBlack,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
-                        } else {
+
+                            // Overlay corners lines
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val l = 30.dp.toPx()
+                                val t = 4.dp.toPx()
+                                // Top Left
+                                drawLine(color = NeonCyan, start = Offset(0f, 0f), end = Offset(l, 0f), strokeWidth = t)
+                                drawLine(color = NeonCyan, start = Offset(0f, 0f), end = Offset(0f, l), strokeWidth = t)
+
+                                // Top Right
+                                drawLine(color = NeonCyan, start = Offset(size.width, 0f), end = Offset(size.width - l, 0f), strokeWidth = t)
+                                drawLine(color = NeonCyan, start = Offset(size.width, 0f), end = Offset(size.width, l), strokeWidth = t)
+
+                                // Bottom Left
+                                drawLine(color = NeonCyan, start = Offset(0f, size.height), end = Offset(l, size.height), strokeWidth = t)
+                                drawLine(color = NeonCyan, start = Offset(0f, size.height), end = Offset(0f, size.height - l), strokeWidth = t)
+
+                                // Bottom Right
+                                drawLine(color = NeonCyan, start = Offset(size.width, size.height), end = Offset(size.width - l, size.height), strokeWidth = t)
+                                drawLine(color = NeonCyan, start = Offset(size.width, size.height), end = Offset(size.width, size.height - l), strokeWidth = t)
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
@@ -423,56 +491,6 @@ fun TransferInScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = recoveryCodeInput,
-                        onValueChange = { recoveryCodeInput = it },
-                        label = { Text("OR PASTE MIGRATION RECOVERY CODE", fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonCyan,
-                            unfocusedBorderColor = BorderDark,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("transfer_in_code_input")
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = {
-                            val cleanCode = recoveryCodeInput.trim()
-                            if (cleanCode.isEmpty()) {
-                                Toast.makeText(context, "Please scan or paste the recovery code first", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-                            handleCodeRestoration(cleanCode)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("transfer_in_restore_button")
-                    ) {
-                        if (isImporting) {
-                            CircularProgressIndicator(color = VoidBlack, modifier = Modifier.size(20.dp))
-                        } else {
-                            Text(
-                                text = "MIGRATE IDENTITY",
-                                fontFamily = FontFamily.Monospace,
-                                color = VoidBlack,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
             }
         }
     }
