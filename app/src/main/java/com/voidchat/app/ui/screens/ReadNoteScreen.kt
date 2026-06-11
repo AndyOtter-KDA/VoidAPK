@@ -1,27 +1,36 @@
 package com.voidchat.app.ui.screens
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voidchat.app.ui.theme.*
 import com.voidchat.app.viewmodel.NoteUiState
 import com.voidchat.app.viewmodel.NoteViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,14 +42,23 @@ fun ReadNoteScreen(
     modifier: Modifier = Modifier
 ) {
     var rawInputCode by remember { mutableStateOf(shareCode) }
-    var revealed by remember { mutableStateOf(false) }
+    var inputPassword by remember { mutableStateOf("") }
+    var showPasswordRequiredPrompt by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
 
     DisposableEffect(Unit) {
         onDispose {
             viewModel.resetState()
+        }
+    }
+
+    // Automatically check if note needs password or trigger decrypt on fetch
+    LaunchedEffect(state) {
+        if (state is NoteUiState.Error && (state as NoteUiState.Error).message.contains("protected with a cognitive password")) {
+            showPasswordRequiredPrompt = true
         }
     }
 
@@ -52,9 +70,9 @@ fun ReadNoteScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "DECRYPT COURIER NOTE",
+                            text = "DECRYPT NOTE",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 15.sp,
+                            fontSize = 18.sp,
                             color = NeonCyan,
                             fontWeight = FontWeight.Bold
                         )
@@ -87,16 +105,21 @@ fun ReadNoteScreen(
             ) {
                 if (state is NoteUiState.Read) {
                     val body = (state as NoteUiState.Read).content
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     Text(
-                        text = "DECRYPTED SYSTEM SEED CONTENT:",
+                        text = "🔓 DECRYPTED CONTENT",
                         color = MatrixGreen,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
 
                     Surface(
                         color = VoidDarkNavy,
-                        border = BorderStroke(1.dp, MatrixGreen),
+                        border = BorderStroke(1.5.dp, MatrixGreen),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -123,7 +146,6 @@ fun ReadNoteScreen(
 
                     inviteUrl?.let { url ->
                         var isJoining by remember { mutableStateOf(false) }
-                        val context = androidx.compose.ui.platform.LocalContext.current
 
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -154,110 +176,78 @@ fun ReadNoteScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
+                    Spacer(modifier = Modifier.height(24.dp))
+
                     Surface(
                         color = VoidDarkNavy,
-                        border = BorderStroke(1.dp, BorderDark),
+                        border = BorderStroke(1.dp, ErrorRed),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = "RESOLVE MANUAL HANDSHAKE INVITE LINK",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = NeonCyan,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Security alert",
+                                tint = ErrorRed,
+                                modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "If you have received an out-of-band group segment handshake link (e.g., void://group/xyz/abc), paste it below to securely connect.",
-                                color = TextMuted,
-                                fontSize = 9.sp,
+                                text = "⚠️ This note was deleted immediately after decryption. Closing this view will sever your only copy.",
+                                color = ErrorRed,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
-                                lineHeight = 13.sp
+                                lineHeight = 16.sp,
+                                modifier = Modifier.weight(1f)
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            
-                            var manualInviteInput by remember { mutableStateOf("") }
-                            var isManualJoining by remember { mutableStateOf(false) }
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                OutlinedTextField(
-                                    value = manualInviteInput,
-                                    onValueChange = { manualInviteInput = it },
-                                    placeholder = { Text("Paste invite link...", color = TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = NeonCyan,
-                                        unfocusedBorderColor = BorderDark,
-                                        focusedTextColor = TextPrimary,
-                                        unfocusedTextColor = TextPrimary
-                                    ),
-                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Button(
-                                    onClick = {
-                                        val code = manualInviteInput.trim()
-                                        if (code.isNotEmpty()) {
-                                            isManualJoining = true
-                                            viewModel.joinGroupFromNote(code) { realGroupId ->
-                                                isManualJoining = false
-                                                if (realGroupId != null) {
-                                                    Toast.makeText(context, "Handshake verified! Joined group channel.", Toast.LENGTH_SHORT).show()
-                                                    onNavigateToGroupChat(realGroupId)
-                                                } else {
-                                                    Toast.makeText(context, "Handshake rejection or banned from sector.", Toast.LENGTH_LONG).show()
-                                                }
-                                            }
-                                        }
-                                    },
-                                    enabled = !isManualJoining,
-                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = if (isManualJoining) "JOINING" else "JOIN",
-                                        color = VoidBlack,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Text(
-                        text = "🔥 NOTE PURGE MANDATED 🔥\nDecryption keys removed. Backing out of this view severs any remaining local trace of this note.",
-                        color = ErrorRed,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-
                     Button(
                         onClick = {
-                            viewModel.resetState()
-                            onNavigateBack()
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Decrypted Note", body)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Note content copied", Toast.LENGTH_SHORT).show()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                        colors = ButtonDefaults.buttonColors(containerColor = MatrixGreen),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("SEVER & DESTRUCTION PROTOCOL", fontFamily = FontFamily.Monospace, color = TextPrimary)
+                        Text(
+                            text = "COPY CONTENT",
+                            fontFamily = FontFamily.Monospace,
+                            color = VoidBlack,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.resetState()
+                            showPasswordRequiredPrompt = false
+                            inputPassword = ""
+                            onNavigateBack()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
+                        border = BorderStroke(1.dp, BorderDark),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "CLOSE",
+                            fontFamily = FontFamily.Monospace,
+                            color = TextPrimary
+                        )
+                    }
+
                 } else if (state is NoteUiState.Destroyed) {
                     Icon(
                         imageVector = Icons.Default.Warning,
@@ -269,11 +259,11 @@ fun ReadNoteScreen(
                     Text(
                         text = "[ NOTE ENVELOPE SEVERED ]",
                         color = ErrorRed,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "This note has expired, peaked user view threshold limits, or was manually zeroed-out by client request. No trace records remain in the Cloud or database caches.",
                         color = TextMuted,
@@ -282,11 +272,23 @@ fun ReadNoteScreen(
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp
                     )
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Button(
+                        onClick = {
+                            viewModel.resetState()
+                            onNavigateBack()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("BACK", fontFamily = FontFamily.Monospace, color = TextPrimary)
+                    }
+
                 } else {
-                    // Ask for share URI/code to fetch
                     Text(
-                        text = "WARNING: Note decryption is active. Once decrypted and displayed, other cached references are destroyed to ensure confidentiality.",
-                        color = WarningYellow,
+                        text = "Enter your decrypted share code transmission package key. Upon successful client-side parsing and handshake confirmation, the note payload displays securely once.",
+                        color = TextSecondary,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                         textAlign = TextAlign.Center,
@@ -298,7 +300,7 @@ fun ReadNoteScreen(
                     OutlinedTextField(
                         value = rawInputCode,
                         onValueChange = { rawInputCode = it },
-                        label = { Text("PASTE DECRYPTION SHARE URI", fontFamily = FontFamily.Monospace) },
+                        placeholder = { Text("Enter decryption code", fontFamily = FontFamily.Monospace, color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = NeonCyan,
                             unfocusedBorderColor = BorderDark,
@@ -310,17 +312,79 @@ fun ReadNoteScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    if (showPasswordRequiredPrompt) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(VoidDarkNavy, RoundedCornerShape(8.dp))
+                                .border(BorderStroke(1.dp, WarningYellow), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = "Lock", tint = WarningYellow, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "This note is password protected. Enter password below to proceed.",
+                                color = WarningYellow,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = inputPassword,
+                            onValueChange = { inputPassword = it },
+                            placeholder = { Text("Enter password", fontFamily = FontFamily.Monospace, color = TextMuted) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = WarningYellow,
+                                unfocusedBorderColor = BorderDark,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            ),
+                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    Button(
-                        onClick = {
-                            viewModel.readNote(rawInputCode)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WarningYellow),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("EXECUTE DECRYPTON PROTOCOL", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                    if (state is NoteUiState.Reading) {
+                        CircularProgressIndicator(color = WarningYellow, modifier = Modifier.padding(16.dp))
+                    } else {
+                        Button(
+                            onClick = {
+                                val password = if (showPasswordRequiredPrompt && inputPassword.isNotEmpty()) inputPassword else null
+                                viewModel.readNote(rawInputCode, password)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WarningYellow),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "DECRYPT NOTE",
+                                fontFamily = FontFamily.Monospace,
+                                color = VoidBlack,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+
+                    if (state is NoteUiState.Error && !showPasswordRequiredPrompt) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = (state as NoteUiState.Error).message,
+                            color = ErrorRed,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

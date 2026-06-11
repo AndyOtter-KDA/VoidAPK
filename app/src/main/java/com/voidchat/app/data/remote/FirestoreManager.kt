@@ -502,12 +502,95 @@ object FirestoreManager {
         Log.d(TAG, "createNote: Storing note: noteId = ${note.noteId}")
         val db = FirebaseFirestore.getInstance()
         try {
-            db.collection("notes").document(note.noteId).set(note, SetOptions.merge()).await()
+            val data = hashMapOf(
+                "noteId" to note.noteId,
+                "encryptedPayload" to note.encryptedPayload,
+                "iv" to note.iv,
+                "salt" to note.salt,
+                "shortCode" to note.shortCode,
+                "shortKey" to note.shortKey,
+                "createdAt" to note.createdAt,
+                "expiresAt" to note.expiresAt,
+                "maxViews" to note.maxViews,
+                "currentViews" to note.currentViews,
+                "destroyed" to note.destroyed,
+                "hasPassword" to note.hasPassword,
+                "keyBase64" to note.keyBase64
+            )
+            db.collection("notes").document(note.noteId).set(data, SetOptions.merge()).await()
             Log.d(TAG, "createNote: Successfully wrote note ${note.noteId}")
         } catch (e: Exception) {
             Log.e(TAG, "createNote failed: ${e.message}", e)
             throw e
         }
+    }
+
+    fun uploadNote(note: Note, callback: (String) -> Unit) {
+        Log.d("VoidFirestore", "uploadNote: Uploading note noteId = ${note.noteId} shortCode = ${note.shortCode}")
+        val db = FirebaseFirestore.getInstance()
+        val data = hashMapOf(
+            "noteId" to note.noteId,
+            "encryptedPayload" to note.encryptedPayload,
+            "iv" to note.iv,
+            "salt" to note.salt,
+            "shortCode" to note.shortCode,
+            "shortKey" to note.shortKey,
+            "createdAt" to note.createdAt,
+            "expiresAt" to note.expiresAt,
+            "maxViews" to note.maxViews,
+            "currentViews" to note.currentViews,
+            "destroyed" to note.destroyed,
+            "hasPassword" to note.hasPassword,
+            "keyBase64" to note.keyBase64
+        )
+        db.collection("notes").document(note.noteId).set(data, SetOptions.merge())
+            .addOnSuccessListener {
+                Log.d("VoidFirestore", "uploadNote success: noteId = ${note.noteId}")
+                callback(note.noteId)
+            }
+            .addOnFailureListener { e ->
+                Log.e("VoidFirestore", "uploadNote failure: ${e.message}", e)
+                callback("")
+            }
+    }
+
+    fun getNoteByShortCode(shortCode: String, callback: (Note?) -> Unit) {
+        val cleanShortCode = shortCode.trim()
+        Log.d("VoidFirestore", "getNoteByShortCode: Querying for shortCode = $cleanShortCode")
+        val db = FirebaseFirestore.getInstance()
+        db.collection("notes")
+            .whereEqualTo("shortCode", cleanShortCode)
+            .get()
+            .addOnSuccessListener { querySnapshot ->
+                val doc = querySnapshot.documents.firstOrNull()
+                if (doc != null && doc.exists()) {
+                    val destroyed = doc.getBoolean("destroyed") ?: false
+                    val noteValue = Note(
+                        noteId = doc.getString("noteId") ?: doc.id,
+                        encryptedPayload = doc.getString("encryptedPayload") ?: "",
+                        iv = doc.getString("iv") ?: "",
+                        createdAt = doc.getLong("createdAt") ?: 0L,
+                        expiresAt = doc.getLong("expiresAt") ?: 0L,
+                        maxViews = doc.getLong("maxViews")?.toInt() ?: 1,
+                        currentViews = doc.getLong("currentViews")?.toInt() ?: 0,
+                        destroyed = destroyed,
+                        salt = doc.getString("salt"),
+                        hasPassword = doc.getBoolean("hasPassword") ?: false,
+                        keyBase64 = doc.getString("keyBase64"),
+                        shortCode = doc.getString("shortCode") ?: "",
+                        shortKey = doc.getString("shortKey")
+                    )
+                    Log.d("VoidFirestore", "getNoteByShortCode success: found noteId = ${noteValue.noteId}")
+                    callback(noteValue)
+                } else {
+                    Log.d("VoidFirestore", "getNoteByShortCode: No note document found for shortCode = $cleanShortCode")
+                    callback(null)
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("VoidFirestore", "getNoteByShortCode failure: ${e.message}", e)
+                callback(null)
+            }
     }
 
     suspend fun getNote(noteId: String): Note? {
@@ -529,7 +612,12 @@ object FirestoreManager {
                         expiresAt = doc.getLong("expiresAt") ?: 0L,
                         maxViews = doc.getLong("maxViews")?.toInt() ?: 1,
                         currentViews = doc.getLong("currentViews")?.toInt() ?: 0,
-                        destroyed = destroyed
+                        destroyed = destroyed,
+                        salt = doc.getString("salt"),
+                        hasPassword = doc.getBoolean("hasPassword") ?: false,
+                        keyBase64 = doc.getString("keyBase64"),
+                        shortCode = doc.getString("shortCode") ?: "",
+                        shortKey = doc.getString("shortKey")
                     )
                 }
             } else {

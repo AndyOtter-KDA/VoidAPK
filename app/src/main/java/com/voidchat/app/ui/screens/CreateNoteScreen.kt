@@ -5,13 +5,16 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voidchat.app.ui.theme.*
@@ -33,13 +37,12 @@ fun CreateNoteScreen(
     modifier: Modifier = Modifier
 ) {
     var contentInput by remember { mutableStateOf("") }
-    var passphraseInput by remember { mutableStateOf("") }
-    var selectedLifetimeSeconds by remember { mutableStateOf(0) } // 0 = First view
-    var maxViews by remember { mutableStateOf(1) }
-    var expandedLifetime by remember { mutableStateOf(false) }
-    var showGroupDropdown by remember { mutableStateOf(false) }
-
-    val groupChats by viewModel.groupChats.collectAsState()
+    var passwordInput by remember { mutableStateOf("") }
+    var isPasswordEnabled by remember { mutableStateOf(false) }
+    
+    // 0 = First read, 300 = 5 minutes, 3600 = 1 hour, 86400 = 24 hours
+    var selectedLifetimeOption by remember { mutableStateOf(0) }
+    var expandedDropdown by remember { mutableStateOf(false) }
 
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -59,9 +62,9 @@ fun CreateNoteScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "DEPLOY ONE-TIME SECURE NOTE",
+                            text = "NEW NOTE",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 15.sp,
+                            fontSize = 18.sp,
                             color = NeonCyan,
                             fontWeight = FontWeight.Bold
                         )
@@ -88,144 +91,327 @@ fun CreateNoteScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(24.dp)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (state is NoteUiState.Created) {
-                    val code = (state as NoteUiState.Created).shareCode
-                    Text(
-                        text = "NOTE CRYPTOGRAPHICALLY DEPLOYED",
-                        color = MatrixGreen,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-
+                    val createdState = state as NoteUiState.Created
+                    
                     Spacer(modifier = Modifier.height(16.dp))
-
+                    
+                    // Success header components (green checkmark or lock)
+                    if (createdState.hasPassword) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Secured",
+                            tint = WarningYellow,
+                            modifier = Modifier.size(64.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = "Created",
+                            tint = MatrixGreen,
+                            modifier = Modifier.size(64.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     Text(
-                        text = "The payload has been encrypted with a random AES-256 session key and published. Anyone with this URI code can fetch, decrypt and destroy the note payload.",
-                        color = TextSecondary,
-                        fontSize = 11.sp,
+                        text = "NOTE CREATED",
+                        color = MatrixGreen,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp
+                        letterSpacing = 2.sp
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "Give this code to the recipient.\nThey can open it on our website.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = {},
-                        readOnly = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonCyan,
-                            unfocusedBorderColor = BorderDark,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
-                        ),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    // Large, bold, monospace card displaying the code
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(2.dp, NeonCyan),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "TRANSMISSION CODE",
+                                color = TextMuted,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Text(
+                                text = createdState.code,
+                                color = NeonCyan,
+                                fontSize = 24.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = android.content.ClipData.newPlainText("Void share code", code)
+                            val clip = android.content.ClipData.newPlainText("Void Share Code", createdState.code)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Copied Void Share URI", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("COPY SECURE TRANSMISSION CODE", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "COPY CODE",
+                            fontFamily = FontFamily.Monospace,
+                            color = VoidBlack,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    if (createdState.hasPassword) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Surface(
+                            color = VoidDarkNavy,
+                            border = BorderStroke(1.dp, WarningYellow),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "⚠️ You set a password: ${createdState.password}\nGive the password to the recipient separately.",
+                                    color = WarningYellow,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 16.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
 
                     OutlinedButton(
                         onClick = {
                             viewModel.resetState()
                             contentInput = ""
-                            passphraseInput = ""
+                            passwordInput = ""
+                            isPasswordEnabled = false
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                         border = BorderStroke(1.dp, BorderDark),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("GENERATE ANOTHER NOTE", fontFamily = FontFamily.Monospace, color = TextPrimary)
+                        Text("CREATE ANOTHER", fontFamily = FontFamily.Monospace, color = TextPrimary)
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onNavigateBack,
+                        colors = ButtonDefaults.buttonColors(containerColor = VoidDarkNavy),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("DONE", fontFamily = FontFamily.Monospace, color = NeonCyan)
+                    }
+
                 } else {
-                    Text(
-                        text = "Compose a secure payload. Once viewed the configured amount of times (default: 1), the memory partition is overwritten with physical noise.",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                     OutlinedTextField(
+                    // Content writing area
+                    OutlinedTextField(
                         value = contentInput,
                         onValueChange = { contentInput = it },
-                        placeholder = { Text("ENTER SECURE CONTENT...", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextMuted) },
+                        placeholder = { Text("Write your note...", fontFamily = FontFamily.Monospace, color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = NeonCyan,
                             unfocusedBorderColor = BorderDark,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
                         ),
-                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                        textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 140.dp, max = 240.dp)
+                            .height(220.dp)
                     )
 
+                    // Word and character count at the bottom right
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(top = 6.dp, bottom = 24.dp),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        Box {
-                            TextButton(
-                                onClick = { showGroupDropdown = true },
-                                colors = ButtonDefaults.textButtonColors(contentColor = HotPinkLight)
+                        Text(
+                            text = "${contentInput.length} chars",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = TextMuted
+                        )
+                    }
+
+                    // Password toggle block
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(1.dp, BorderDark),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = "+ ATTACH GROUP SEGMENT INVITE Link",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Lock, contentDescription = "Password option", tint = NeonCyan, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Password protect",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.sp,
+                                        color = TextPrimary
+                                    )
+                                }
+                                Switch(
+                                    checked = isPasswordEnabled,
+                                    onCheckedChange = { isPasswordEnabled = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = NeonCyan,
+                                        checkedTrackColor = VoidDarkBlue,
+                                        uncheckedThumbColor = TextMuted,
+                                        uncheckedTrackColor = VoidBlack
+                                    )
                                 )
                             }
 
-                            DropdownMenu(
-                                expanded = showGroupDropdown,
-                                onDismissRequest = { showGroupDropdown = false },
-                                modifier = Modifier.background(VoidDarkBlue)
-                            ) {
-                                if (groupChats.isEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text("No Group Channels available", color = TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                                        onClick = { showGroupDropdown = false }
+                            if (isPasswordEnabled) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = passwordInput,
+                                    onValueChange = { passwordInput = it },
+                                    placeholder = { Text("Enter a password", fontFamily = FontFamily.Monospace, color = TextMuted, fontSize = 12.sp) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = NeonCyan,
+                                        unfocusedBorderColor = BorderDark,
+                                        focusedTextColor = TextPrimary,
+                                        unfocusedTextColor = TextPrimary
+                                    ),
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Self-destruct options drop / radio buttons
+                    Surface(
+                        color = VoidDarkNavy,
+                        border = BorderStroke(1.dp, BorderDark),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Text(
+                                text = "SELF-DESTRUCT TIMELINE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TextMuted,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            // Clean Select option from dropdown
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { expandedDropdown = true },
+                                    border = BorderStroke(1.dp, BorderDark),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = when(selectedLifetimeOption) {
+                                                0 -> "After first read"
+                                                300 -> "After 5 minutes"
+                                                3600 -> "After 1 hour"
+                                                86400 -> "After 24 hours"
+                                                else -> "After first read"
+                                            },
+                                            color = NeonCyan,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(text = "▼", color = NeonCyan, fontSize = 10.sp)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = expandedDropdown,
+                                    onDismissRequest = { expandedDropdown = false },
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(VoidDarkBlue)
+                                ) {
+                                    val dropdownOptions = listOf(
+                                        Pair("After first read", 0),
+                                        Pair("After 5 minutes", 300),
+                                        Pair("After 1 hour", 3600),
+                                        Pair("After 24 hours", 86400)
                                     )
-                                } else {
-                                    groupChats.forEach { group ->
+                                    dropdownOptions.forEach { (label, duration) ->
                                         DropdownMenuItem(
-                                            text = { Text(group.name, color = TextPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                            text = {
+                                                Text(
+                                                    text = label,
+                                                    color = TextPrimary,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 12.sp
+                                                )
+                                            },
                                             onClick = {
-                                                showGroupDropdown = false
-                                                viewModel.createGroupInviteAndAppend(group.groupId) { inviteUrl ->
-                                                    val spacing = if (contentInput.isEmpty()) "" else "\n\n"
-                                                    contentInput += "${spacing}Group Invite Link: $inviteUrl"
-                                                    Toast.makeText(context, "Appended invitation handshake context.", Toast.LENGTH_SHORT).show()
-                                                }
+                                                selectedLifetimeOption = duration
+                                                expandedDropdown = false
                                             }
                                         )
                                     }
@@ -234,73 +420,39 @@ fun CreateNoteScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(28.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Lifetime settings dropdown
-                        Box {
-                            Button(
-                                onClick = { expandedLifetime = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = VoidDarkNavy),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = if (selectedLifetimeSeconds == 0) "VIEW LIFETIME: FIRST READ" else "VIEW LIFETIME: ${selectedLifetimeSeconds / 60} min",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    color = NeonCyan
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = expandedLifetime,
-                                onDismissRequest = { expandedLifetime = false },
-                                modifier = Modifier.background(VoidDarkBlue)
-                            ) {
-                                val lifespans = listOf(
-                                    Pair("First read", 0),
-                                    Pair("5 min", 300),
-                                    Pair("1 hour", 3600)
-                                )
-                                lifespans.forEach { (lbl, life) ->
-                                    DropdownMenuItem(
-                                        text = { Text(lbl, color = TextPrimary, fontFamily = FontFamily.Monospace) },
-                                        onClick = {
-                                            selectedLifetimeSeconds = life
-                                            expandedLifetime = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        // Max views toggle if first view format
-                        if (selectedLifetimeSeconds == 0) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("VIEWS:", fontFamily = FontFamily.Monospace, color = TextMuted, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                TextButton(onClick = { maxViews = if (maxViews == 1) 3 else 1 }) {
-                                    Text("$maxViews x", color = HotPink, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                                }
-                            }
+                    if (state is NoteUiState.Creating) {
+                        CircularProgressIndicator(color = NeonCyan, modifier = Modifier.padding(16.dp))
+                    } else {
+                        Button(
+                            onClick = {
+                                val password = if (isPasswordEnabled && passwordInput.isNotEmpty()) passwordInput else null
+                                viewModel.createNote(contentInput, password, selectedLifetimeOption)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "CREATE NOTE",
+                                fontFamily = FontFamily.Monospace,
+                                color = VoidBlack,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Button(
-                        onClick = {
-                            val expiry = if (selectedLifetimeSeconds == 0) 0L else System.currentTimeMillis() + (selectedLifetimeSeconds * 1000)
-                            viewModel.createNote(contentInput, maxViews, expiry)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("SEAL NOTE & COMMIT TO REPOSITORY", fontFamily = FontFamily.Monospace, color = VoidBlack, fontWeight = FontWeight.Bold)
+                    if (state is NoteUiState.Error) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = (state as NoteUiState.Error).message,
+                            color = ErrorRed,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }

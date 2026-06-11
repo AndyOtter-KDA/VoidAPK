@@ -19,7 +19,7 @@ import java.util.UUID
 sealed interface NoteUiState {
     object Idle : NoteUiState
     object Creating : NoteUiState
-    data class Created(val shareCode: String) : NoteUiState
+    data class Created(val code: String, val hasPassword: Boolean, val password: String? = null) : NoteUiState
     object Reading : NoteUiState
     data class Read(val content: String) : NoteUiState
     object Destroyed : NoteUiState
@@ -127,7 +127,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createNote(text: String, maxViews: Int, expiresAtMillis: Long) {
+    fun createNote(text: String, password: String?, expiryOptionSeconds: Int) {
         if (text.trim().isEmpty()) {
             _state.value = NoteUiState.Error("Note content cannot be empty")
             return
@@ -135,64 +135,108 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.value = NoteUiState.Creating
             try {
-                val cryptoResult = NoteCryptoManager.encryptNote(text)
-                val noteId = "note_${UUID.randomUUID().toString().take(8)}"
+                // Generate a robust unique ID
+                val noteId = "note_${UUID.randomUUID().toString().hashCode().let { if (it < 0) -it else it }.toString().take(8)}"
+                val hasPassword = !password.isNullOrEmpty()
+
+                // Encrypt payload using PBKDF2/AES-GCM
+                val cryptoResult = NoteCryptoManager.encryptNote(text, password)
+
+                // Generate simple share code
+                val shareCode = NoteCryptoManager.generateNoteCode(noteId, cryptoResult.keyBase64, hasPassword)
+
+                // Store in-memory mapping
+                NoteCryptoManager.storeMapping(shareCode.take(5), noteId, cryptoResult.keyBase64)
+
+                // Compute expiration time
+                val expiresAtMillis = if (expiryOptionSeconds == 0) 0L else System.currentTimeMillis() + (expiryOptionSeconds * 1000L)
+
+                // Prepare note record
                 val note = Note(
                     noteId = noteId,
                     encryptedPayload = cryptoResult.encryptedPayload,
                     iv = cryptoResult.iv,
                     createdAt = System.currentTimeMillis(),
                     expiresAt = expiresAtMillis,
-                    maxViews = maxViews,
+                    maxViews = 1,
                     currentViews = 0,
-                    destroyed = false
+                    destroyed = false,
+                    salt = cryptoResult.saltBase64,
+                    hasPassword = hasPassword,
+                    keyBase64 = cryptoResult.keyBase64,
+                    shortCode = noteId.take(5),
+                    shortKey = if (hasPassword) null else cryptoResult.keyBase64.filter { it.isLetterOrDigit() }.take(6)
                 )
-                FirestoreManager.createNote(note)
-                val shareCode = NoteCryptoManager.generateShareCode(noteId, cryptoResult.keyBase64)
-                _state.value = NoteUiState.Created(shareCode)
+
+                // Upload
+                FirestoreManager.uploadNote(note) { uploadedId ->
+                    if (uploadedId.isNotEmpty()) {
+                        _state.value = NoteUiState.Created(
+                            code = shareCode,
+                            hasPassword = hasPassword,
+                            password = password
+                        )
+                    } else {
+                        _state.value = NoteUiState.Error("Failed to upload secure note package to Firestore")
+                    }
+                }
             } catch (e: Exception) {
                 _state.value = NoteUiState.Error("Failed to lock and seal note payload: ${e.localizedMessage}")
             }
         }
     }
 
-    fun readNote(shareCode: String) {
-        if (shareCode.trim().isEmpty()) {
-            _state.value = NoteUiState.Error("Invalid share code pattern")
+    fun readNote(shareCode: String, password: String?) {
+        val cleanCode = shareCode.trim()
+        if (cleanCode.isEmpty()) {
+            _state.value = NoteUiState.Error("Decryption code cannot be empty")
             return
         }
         _state.value = NoteUiState.Reading
         viewModelScope.launch {
             try {
-                val parsed = NoteCryptoManager.parseShareCode(shareCode)
-                if (parsed == null) {
-                    _state.value = NoteUiState.Error("Corrupted or invalid quantum code link")
-                    return@launch
-                }
-                
-                val (noteId, keyBase64) = parsed
-                val note = FirestoreManager.getNote(noteId)
-                if (note == null || note.destroyed) {
-                    _state.value = NoteUiState.Destroyed
-                    return@launch
-                }
+                val parts = cleanCode.split("-", limit = 2)
+                val shortCode = parts[0].trim()
 
-                if (note.expiresAt > 0 && note.expiresAt < System.currentTimeMillis()) {
-                    FirestoreManager.deleteNote(noteId)
-                    _state.value = NoteUiState.Destroyed
-                    return@launch
-                }
-
-                val decryptedResult = NoteCryptoManager.decryptNote(note.encryptedPayload, note.iv, keyBase64)
-                decryptedResult.fold(
-                    onSuccess = { plaintext ->
-                        FirestoreManager.markNoteViewed(noteId)
-                        _state.value = NoteUiState.Read(plaintext)
-                    },
-                    onFailure = {
-                        _state.value = NoteUiState.Error("Payload decryption handshake keys mismatch.")
+                FirestoreManager.getNoteByShortCode(shortCode) { note ->
+                    if (note == null || note.destroyed) {
+                        _state.value = NoteUiState.Destroyed
+                        return@getNoteByShortCode
                     }
-                )
+
+                    if (note.expiresAt > 0 && note.expiresAt < System.currentTimeMillis()) {
+                        viewModelScope.launch {
+                            FirestoreManager.deleteNote(note.noteId)
+                        }
+                        _state.value = NoteUiState.Destroyed
+                        return@getNoteByShortCode
+                    }
+
+                    if (note.hasPassword && password.isNullOrEmpty()) {
+                        _state.value = NoteUiState.Error("This note is protected with a cognitive password.")
+                        return@getNoteByShortCode
+                    }
+
+                    val decryptedResult = NoteCryptoManager.decryptNote(
+                        encryptedPayload = note.encryptedPayload,
+                        iv = note.iv,
+                        keyBase64 = note.keyBase64,
+                        password = password,
+                        saltBase64 = note.salt
+                    )
+
+                    decryptedResult.fold(
+                        onSuccess = { plaintext ->
+                            viewModelScope.launch {
+                                FirestoreManager.markNoteViewed(note.noteId)
+                            }
+                            _state.value = NoteUiState.Read(plaintext)
+                        },
+                        onFailure = {
+                            _state.value = NoteUiState.Error("Cognitive key decryption mismatch. Check code/password.")
+                        }
+                    )
+                }
             } catch (e: Exception) {
                 _state.value = NoteUiState.Error("Read note error: ${e.localizedMessage}")
             }

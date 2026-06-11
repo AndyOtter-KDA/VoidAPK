@@ -61,7 +61,12 @@ data class Note(
     val expiresAt: Long,
     val maxViews: Int,
     val currentViews: Int,
-    val destroyed: Boolean
+    val destroyed: Boolean,
+    val salt: String? = null,
+    val hasPassword: Boolean = false,
+    val keyBase64: String? = null,
+    val shortCode: String = "",
+    val shortKey: String? = null
 )
 
 @Entity(tableName = "local_groups")
