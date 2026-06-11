@@ -2,13 +2,18 @@ package com.voidchat.app.crypto
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import android.util.Base64
+import android.util.Log
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
 import java.security.PublicKey
+import java.security.KeyFactory
 import java.security.spec.ECGenParameterSpec
+import java.security.spec.X509EncodedKeySpec
+import java.security.spec.PKCS8EncodedKeySpec
 import java.security.cert.X509Certificate
 import java.util.Date
 import java.math.BigInteger
@@ -50,6 +55,17 @@ class MockX509Certificate(private val pubKey: PublicKey) : X509Certificate() {
 object IdentityManager {
     private const val KEYSTORE_PROVIDER = "AndroidKeyStore"
     private const val KEY_ALIAS = "void_identity_key"
+
+    fun formatDisplayId(hash: ByteArray): String {
+        val hex = hash.take(8).joinToString("") { "%02x".format(it) }
+        return hex.chunked(4).joinToString("-")
+    }
+
+    fun deriveDisplayId(publicKey: PublicKey): String {
+        val bytes = publicKey.encoded ?: java.util.UUID.randomUUID().toString().toByteArray()
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return formatDisplayId(digest)
+    }
 
     fun createIdentity(): IdentityResult {
         val kpg = KeyPairGenerator.getInstance("EC")
@@ -157,7 +173,7 @@ object IdentityManager {
     }
 
     fun generateRecoveryCode(): String {
-        android.util.Log.d("VoidIdentity", "generateRecoveryCode: Starting recovery code generation")
+        android.util.Log.d("VoidIdentity", "=== GENERATE RECOVERY CODE ===")
         val displayId = getDisplayId() ?: "0000-0000-0000-0000"
         
         // Exact instruction: "Generating code for: X"
@@ -174,16 +190,28 @@ object IdentityManager {
             pubB64 = getPublicKeyBase64() ?: ""
         }
         
+        try {
+            val pubKeyBytes = Base64.decode(pubB64, Base64.NO_WRAP)
+            val hash = MessageDigest.getInstance("SHA-256").digest(pubKeyBytes)
+            android.util.Log.d("VoidIdentity", "Public key bytes length: ${pubKeyBytes.size}")
+            android.util.Log.d("VoidIdentity", "Hash: ${hash.take(8).joinToString("") { "%02x".format(it) }}")
+        } catch (e: Exception) {
+            android.util.Log.e("VoidIdentity", "Error in logging public key details inside generateRecoveryCode", e)
+        }
+        
         val pm = com.voidchat.app.data.local.PreferencesManager(context)
         val username = pm.username ?: ""
         
         val code = "VOIDv1:$displayId:$privB64:$pubB64:$username"
+        android.util.Log.d("VoidIdentity", "Display ID: $displayId")
+        android.util.Log.d("VoidIdentity", "Recovery code length: ${code.length}")
         android.util.Log.d("VoidIdentity", "Generated recovery code for: $displayId")
         return code
     }
 
     fun restoreFromRecoveryCode(code: String): Result<RestoreResult> {
-        // Exact instruction: "Restoring from code starting with: Y"
+        android.util.Log.d("VoidIdentity", "=== RESTORE FROM CODE ===")
+        android.util.Log.d("VoidIdentity", "Code starts with: ${code.take(20)}")
         android.util.Log.d("VoidIdentity", "Restoring from code starting with: ${code.take(15)}")
         android.util.Log.d("VoidIdentity", "Attempting to restore from code")
         return try {
@@ -202,23 +230,32 @@ object IdentityManager {
                 return Result.failure(Exception("Incomplete recovery code"))
             }
 
-            val displayId = parts[0]
+            val storedDisplayId = parts[0]
             val privateKeyBase64 = parts[1]
             val publicKeyBase64 = parts[2]
             val username = if (parts.size >= 4) parts[3] else ""
 
-            android.util.Log.d("VoidIdentity", "Restoring displayId=$displayId, username=$username")
+            android.util.Log.d("VoidIdentity", "Parsed display ID: $storedDisplayId")
+            android.util.Log.d("VoidIdentity", "Restoring displayId=$storedDisplayId, username=$username")
 
-            val pubKeyBytes = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
+            val publicKeyBytes = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
             val keyFactory = java.security.KeyFactory.getInstance("EC")
-            val pubKeySpec = java.security.spec.X509EncodedKeySpec(pubKeyBytes)
+            val pubKeySpec = java.security.spec.X509EncodedKeySpec(publicKeyBytes)
             val publicKey = keyFactory.generatePublic(pubKeySpec)
 
-            val computedDisplayId = deriveDisplayId(publicKey)
-            if (computedDisplayId != displayId) {
-                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Security verification failed. Computed displayId '$computedDisplayId' does not match specified displayId '$displayId'")
+            android.util.Log.d("VoidIdentity", "Reconstructed public key bytes length: ${publicKeyBytes.size}")
+
+            val hash = MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
+            android.util.Log.d("VoidIdentity", "Derived hash: ${hash.take(8).joinToString("") { "%02x".format(it) }}")
+
+            val derivedDisplayId = formatDisplayId(hash)
+            android.util.Log.d("VoidIdentity", "Derived display ID: $derivedDisplayId")
+
+            if (derivedDisplayId != storedDisplayId) {
+                android.util.Log.e("VoidIdentity", "MISMATCH — derived=$derivedDisplayId stored=$storedDisplayId")
+                android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Error: Security verification failed. Computed displayId '$derivedDisplayId' does not match specified displayId '$storedDisplayId'")
                 android.util.Log.e("VoidIdentity", "Key imported: fail")
-                return Result.failure(Exception("Security verification failed: Display ID mismatch"))
+                return Result.failure(Exception("Security verification failed: display ID mismatch"))
             }
 
             val privKeyBytes = Base64.decode(privateKeyBase64, Base64.NO_WRAP)
@@ -235,8 +272,9 @@ object IdentityManager {
                     KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
                 ).setDigests(KeyProperties.DIGEST_SHA256).build()
             )
-            // Exact instruction: "Key imported: success"
+            // Exact instruction: "Key imported: success" and "Private key imported successfully"
             android.util.Log.d("VoidIdentity", "Key imported: success")
+            android.util.Log.d("VoidIdentity", "Private key imported successfully")
 
             val context = com.voidchat.app.VoidApp.instance
             val prefs = context.getSharedPreferences("voidchat_secure_preferences", android.content.Context.MODE_PRIVATE)
@@ -248,20 +286,13 @@ object IdentityManager {
             val pm = com.voidchat.app.data.local.PreferencesManager(context)
             pm.username = username
 
-            android.util.Log.d("VoidIdentity", "Identity restored: $displayId")
-            Result.success(RestoreResult(displayId, username))
+            android.util.Log.d("VoidIdentity", "Identity restored: $storedDisplayId")
+            return Result.success(RestoreResult(derivedDisplayId, username))
         } catch (e: Exception) {
             android.util.Log.e("VoidIdentity", "Key imported: fail", e)
             android.util.Log.e("VoidIdentity", "restoreFromRecoveryCode Exception: ${e.message}", e)
-            Result.failure(e)
+            return Result.failure(e)
         }
-    }
-
-    private fun deriveDisplayId(publicKey: PublicKey): String {
-        val bytes = publicKey.encoded ?: java.util.UUID.randomUUID().toString().toByteArray()
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        val hex = digest.joinToString("") { "%02X".format(it) }.take(16)
-        return hex.chunked(4).joinToString("-")
     }
 
     private fun generatePhraseFromId(displayId: String): List<String> {
