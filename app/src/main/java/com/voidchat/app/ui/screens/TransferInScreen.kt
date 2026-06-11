@@ -234,16 +234,18 @@ fun TransferInScreen(
                         db.identityDao().insertIdentity(localIdentity)
                         prefs.username = username
 
-                        Toast.makeText(context, "Identity restored. Welcome back, $username.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Identity restored. Welcome back.", Toast.LENGTH_LONG).show()
                         onNavigateToHome()
                     },
-                    onFailure = {
-                        Toast.makeText(context, "Invalid recovery code. Check code and try again.", Toast.LENGTH_LONG).show()
+                    onFailure = { err ->
+                        val errMsg = err.localizedMessage ?: err.message ?: "Invalid recovery code"
+                        Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
                         isImporting = false
                     }
                 )
             } catch (e: Exception) {
-                Toast.makeText(context, "Handshake failed: ${e.message}", Toast.LENGTH_LONG).show()
+                val errMsg = e.localizedMessage ?: e.message ?: "Handshake failed"
+                Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
                 isImporting = false
             }
         }
@@ -391,7 +393,7 @@ fun TransferInScreen(
                                     CircularProgressIndicator(color = NeonCyan)
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        "RESTORING SYSTEM...",
+                                        "Restoring identity...",
                                         color = NeonCyan,
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,

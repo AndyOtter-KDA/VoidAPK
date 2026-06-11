@@ -72,8 +72,9 @@ object NoteCryptoManager {
     }
 
     fun generateNoteCode(fullNoteId: String, fullKeyBase64: String): NoteCode {
-        val shortCode = fullNoteId.take(5)
-        val shortKey = fullKeyBase64.take(6)
+        val cleanedNoteId = fullNoteId.replace("-", "")
+        val shortCode = cleanedNoteId.take(8)
+        val shortKey = fullKeyBase64.take(8)
         val displayCode = "$shortCode-$shortKey"
         android.util.Log.d("VoidNote", "Code: $displayCode")
         return NoteCode(

@@ -286,7 +286,8 @@ fun RestoreScreen(
                                                 onNavigateToHome()
                                             },
                                             onFailure = { err ->
-                                                Toast.makeText(context, "Invalid recovery code. Check the code and try again.", Toast.LENGTH_LONG).show()
+                                                val errMsg = err.localizedMessage ?: err.message ?: "Invalid recovery code. Check the code and try again."
+                                                Toast.makeText(context, "Error: $errMsg", Toast.LENGTH_LONG).show()
                                             }
                                         )
                                     } catch (e: Exception) {

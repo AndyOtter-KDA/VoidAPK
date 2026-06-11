@@ -37,9 +37,7 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     myDisplayId: String,
     onNavigateToChat: (chatId: String) -> Unit,
-    onNavigateToGroupChat: (groupId: String) -> Unit,
     onNavigateToJoinChat: () -> Unit,
-    onNavigateToCreateGroup: () -> Unit,
     onNavigateToContactPicker: () -> Unit,
     onNavigateToCreateNote: () -> Unit,
     onNavigateToReadNote: (shareCode: String) -> Unit,
@@ -47,13 +45,9 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val chats by viewModel.chats.collectAsState()
-    val groupChats by viewModel.groupChats.collectAsState()
-    val unifiedChats by viewModel.unifiedChats.collectAsState()
     val announcement by viewModel.announcement.collectAsState()
     val contacts by viewModel.contacts.collectAsState()
     var selectedTab by remember { mutableStateOf("chats") }
-    var chatsSubTab by remember { mutableStateOf("all") } // "all", "direct" or "groups"
-    var showFabMenu by remember { mutableStateOf(false) }
     var showOpenNoteDialog by remember { mutableStateOf(false) }
     var openNoteCodeInput by remember { mutableStateOf("") }
 
@@ -212,41 +206,13 @@ fun HomeScreen(
             }
         },
         floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                if (showFabMenu) {
-                    Surface(
-                        color = VoidDarkNavy,
-                        border = BorderStroke(1.dp, BorderDark),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            DropdownMenuItem(
-                                text = { Text("NEW PRIVATE CHAT", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = NeonCyan) },
-                                onClick = {
-                                    showFabMenu = false
-                                    onNavigateToJoinChat()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("NEW GROUP CHAT", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = HotPinkLight) },
-                                onClick = {
-                                    showFabMenu = false
-                                    onNavigateToCreateGroup()
-                                }
-                            )
-                        }
-                    }
-                }
-
-                FloatingActionButton(
-                    onClick = { showFabMenu = !showFabMenu },
-                    containerColor = NeonCyan,
-                    contentColor = VoidBlack,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add options")
-                }
+            FloatingActionButton(
+                onClick = { onNavigateToJoinChat() },
+                containerColor = NeonCyan,
+                contentColor = VoidBlack,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "New Private Chat")
             }
         }
     ) { innerPadding ->
@@ -364,174 +330,35 @@ fun HomeScreen(
                 }
 
                 if (selectedTab == "chats") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { chatsSubTab = "all" },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (chatsSubTab == "all") NeonCyan else VoidDarkNavy,
-                                contentColor = if (chatsSubTab == "all") VoidBlack else TextSecondary
-                            ),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 4.dp)
+                    if (chats.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "ALL FEED",
+                                text = "[ NO ACTIVE TRANSMISSIONS ]\nInitialize a E2E terminal link to communicate.",
+                                color = TextMuted,
+                                fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                lineHeight = 18.sp
                             )
-                        }
-
-                        Button(
-                            onClick = { chatsSubTab = "direct" },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (chatsSubTab == "direct") NeonCyan else VoidDarkNavy,
-                                contentColor = if (chatsSubTab == "direct") VoidBlack else TextSecondary
-                            ),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "DIRECT [E2E]",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        
-                        Button(
-                            onClick = { chatsSubTab = "groups" },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (chatsSubTab == "groups") HotPinkLight else VoidDarkNavy,
-                                contentColor = if (chatsSubTab == "groups") VoidBlack else TextSecondary
-                            ),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "MULTI-NODE [${groupChats.size}]",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    if (chatsSubTab == "all") {
-                        if (unifiedChats.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "[ NO SYSTEM TRANSMISSIONS ]\nAll communication feeds are empty.",
-                                    color = TextMuted,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f)
-                            ) {
-                                items(unifiedChats, key = { it.id }) { item ->
-                                    when (item) {
-                                        is com.voidchat.app.viewmodel.UnifiedChatItem.Direct -> {
-                                            ChatRowItem(
-                                                chatUi = item.chatUi,
-                                                onDeleteLocally = { viewModel.deleteChatLocally(item.chatUi.chat.chatId) },
-                                                onClearMessages = { viewModel.clearMessages(item.chatUi.chat.chatId) },
-                                                onClick = { onNavigateToChat(item.chatUi.chat.chatId) }
-                                            )
-                                        }
-                                        is com.voidchat.app.viewmodel.UnifiedChatItem.Group -> {
-                                            GroupRowItem(
-                                                group = item.groupChat,
-                                                onClick = { onNavigateToGroupChat(item.realId) }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if (chatsSubTab == "direct") {
-                        if (chats.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "[ NO ACTIVE TRANSMISSIONS ]\nInitialize a E2E terminal link to communicate.",
-                                    color = TextMuted,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f)
-                            ) {
-                                items(chats) { chatUi ->
-                                    ChatRowItem(
-                                        chatUi = chatUi,
-                                        onDeleteLocally = { viewModel.deleteChatLocally(chatUi.chat.chatId) },
-                                        onClearMessages = { viewModel.clearMessages(chatUi.chat.chatId) },
-                                        onClick = { onNavigateToChat(chatUi.chat.chatId) }
-                                    )
-                                }
-                            }
                         }
                     } else {
-                        if (groupChats.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "[ NO ACTIVE GROUP SEGMENTS ]\nDeploy a multi-party system channel or check secure invite links to sync.",
-                                    color = TextMuted,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    lineHeight = 18.sp
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                        ) {
+                            items(chats) { chatUi ->
+                                ChatRowItem(
+                                    chatUi = chatUi,
+                                    onDeleteLocally = { viewModel.deleteChatLocally(chatUi.chat.chatId) },
+                                    onClearMessages = { viewModel.clearMessages(chatUi.chat.chatId) },
+                                    onClick = { onNavigateToChat(chatUi.chat.chatId) }
                                 )
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f)
-                            ) {
-                                items(groupChats) { group ->
-                                    GroupRowItem(
-                                        group = group,
-                                        onClick = { onNavigateToGroupChat(group.groupId) }
-                                    )
-                                }
                             }
                         }
                     }
@@ -728,72 +555,4 @@ fun ChatRowItem(
     }
 }
 
-@Composable
-fun GroupRowItem(
-    group: com.voidchat.app.data.models.GroupChat,
-    onClick: () -> Unit
-) {
-    Surface(
-        color = VoidBlack,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = NeonCyan,
-                            modifier = Modifier.size(8.dp)
-                        ) {}
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = group.name,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (group.description.isNotEmpty()) group.description else "No designator explanation.",
-                        color = TextSecondary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Spacer(modifier = Modifier.height(2.dp))
-                    val memberCount = group.members.split(",").filter { it.isNotEmpty() }.size
-                    Text(
-                        text = "SYS_ID: ${group.groupId} // MEMBERS: $memberCount",
-                        color = TextMuted,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "SEGMENT",
-                        color = HotPinkLight,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            Divider(color = BorderDark.copy(alpha = 0.5f), thickness = 1.dp)
-        }
-    }
-}
+// GroupRowItem removed

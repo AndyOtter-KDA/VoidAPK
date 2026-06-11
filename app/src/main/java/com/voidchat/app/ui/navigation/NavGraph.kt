@@ -95,14 +95,8 @@ fun NavGraph(
                 onNavigateToChat = { chatId ->
                     navController.navigate("${Routes.CHAT}/${chatId}")
                 },
-                onNavigateToGroupChat = { groupId ->
-                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}")
-                },
                 onNavigateToJoinChat = {
                     navController.navigate(Routes.JOIN_CHAT)
-                },
-                onNavigateToCreateGroup = {
-                    navController.navigate(Routes.CREATE_GROUP)
                 },
                 onNavigateToContactPicker = {
                     navController.navigate(Routes.CONTACT_PICKER)
@@ -146,92 +140,6 @@ fun NavGraph(
             )
         }
 
-        composable(
-            route = "${Routes.CREATE_GROUP}?members={members}",
-            arguments = listOf(
-                navArgument("members") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
-            )
-        ) { backStackEntry ->
-            val vm: GroupChatViewModel = viewModel()
-            val initialMembers = backStackEntry.arguments?.getString("members")
-            CreateGroupScreen(
-                viewModel = vm,
-                initialMembers = initialMembers,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToGroupChat = { groupId ->
-                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}") {
-                        popUpTo(Routes.CREATE_GROUP) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(Routes.CONTACT_PICKER) {
-            ContactPickerScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToCreateGroup = { membersString ->
-                    navController.navigate("${Routes.CREATE_GROUP}?members=$membersString") {
-                        popUpTo(Routes.CONTACT_PICKER) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(
-            route = "${Routes.GROUP_CHAT}/{groupId}",
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
-            val vm: GroupChatViewModel = viewModel()
-            GroupChatScreen(
-                groupId = groupId,
-                viewModel = vm,
-                myDisplayId = "VOID-E2E-COMPLY-PEER",
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToGroupInfo = { gid ->
-                    navController.navigate("${Routes.GROUP_INFO}/${gid}")
-                }
-            )
-        }
-
-        composable(
-            route = "${Routes.GROUP_INFO}/{groupId}",
-            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
-            val vm: GroupChatViewModel = viewModel()
-            GroupInfoScreen(
-                groupId = groupId,
-                viewModel = vm,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(
-            route = "${Routes.JOIN_GROUP}/{inviteCode}",
-            arguments = listOf(navArgument("inviteCode") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val code = backStackEntry.arguments?.getString("inviteCode") ?: ""
-            val vm: GroupChatViewModel = viewModel()
-            JoinGroupScreen(
-                inviteCode = code,
-                viewModel = vm,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToGroupChat = { groupId ->
-                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}")
-                }
-            )
-        }
-
         composable(Routes.CREATE_NOTE) {
             val vm: NoteViewModel = viewModel()
             CreateNoteScreen(
@@ -249,10 +157,7 @@ fun NavGraph(
             ReadNoteScreen(
                 shareCode = code,
                 viewModel = vm,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToGroupChat = { groupId ->
-                    navController.navigate("${Routes.GROUP_CHAT}/${groupId}")
-                }
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

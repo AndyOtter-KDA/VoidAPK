@@ -552,7 +552,7 @@ object FirestoreManager {
         )
         db.collection("notes").document(noteCode.shortCode).set(data, SetOptions.merge())
             .addOnSuccessListener {
-                Log.d("VoidFirestore", "Note uploaded with ID: ${noteCode.shortCode}")
+                Log.d("VoidFirestore", "Note stored at: notes/${noteCode.shortCode} with key length: ${noteCode.fullKeyBase64.length}")
                 callback(noteCode.shortCode)
             }
             .addOnFailureListener { e ->

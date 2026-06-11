@@ -38,7 +38,6 @@ fun ReadNoteScreen(
     shareCode: String,
     viewModel: NoteViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToGroupChat: (groupId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var rawInputCode by remember { mutableStateOf(shareCode) }
@@ -130,42 +129,7 @@ fun ReadNoteScreen(
                         }
                     }
 
-                    val inviteUrl = remember(body) {
-                        val regex = "void://group/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+".toRegex()
-                        regex.find(body)?.value
-                    }
-
-                    inviteUrl?.let { url ->
-                        var isJoining by remember { mutableStateOf(false) }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Button(
-                            onClick = {
-                                isJoining = true
-                                viewModel.joinGroupFromNote(url) { realGroupId ->
-                                    isJoining = false
-                                    if (realGroupId != null) {
-                                        Toast.makeText(context, "Handshake verified! Joined group channel.", Toast.LENGTH_SHORT).show()
-                                        onNavigateToGroupChat(realGroupId)
-                                    } else {
-                                        Toast.makeText(context, "Handshake rejection or banned from sector.", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            },
-                            enabled = !isJoining,
-                            colors = ButtonDefaults.buttonColors(containerColor = HotPinkLight),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (isJoining) "RESOLVING ROUTING SEGMENT..." else "CONNECT TO GROUP CHANNEL",
-                                fontFamily = FontFamily.Monospace,
-                                color = VoidBlack,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
+                    // Group invite button block removed
 
                     Spacer(modifier = Modifier.height(24.dp))
 
