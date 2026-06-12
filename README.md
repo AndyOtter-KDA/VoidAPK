@@ -20,6 +20,34 @@ is by design.
 
 ---
 
+## IDENTITY AND KEY MANAGEMENT
+
+Void uses a hybrid cryptographic wallet-style architecture for identity
+management.
+
+Your identity is an ECDH P-256 key pair generated on-device and stored
+in the Android Keystore. This is the same elliptic curve cryptography
+used by modern cryptocurrency wallets.
+
+Your 12-word recovery phrase is generated using the BIP39 standard.
+BIP39 is the same mnemonic encoding used by Bitcoin and other
+cryptocurrency wallets to back up and restore private keys. Your 12 words
+encode 128 bits of entropy plus a checksum, allowing you to recover your
+full identity on any device.
+
+This means:
+
+- Your identity is a cryptographic key, not an account.
+- Your recovery phrase is a standard BIP39 mnemonic.
+- Your Display ID is derived from your public key using SHA-256.
+- No server ever sees your private key or recovery phrase.
+
+If you have used a cryptocurrency wallet, you already understand how
+Void works. Your identity is your wallet. Your recovery phrase is your
+seed. Lose them, and access is gone forever.
+
+---
+
 ## ENCRYPTION
 
 Every message is end-to-end encrypted.
@@ -78,9 +106,10 @@ transfer code expires after 10 minutes.
 You can also export an encrypted backup file to your device storage,
 protected by a password you choose.
 
-A 12-word recovery phrase is shown once when you create your identity.
-Write it down. Store it safely. This is the only way to recover your
-identity if all other methods fail. Void cannot recover it for you.
+A 12-word BIP39 recovery phrase is shown once when you create your
+identity. Write it down. Store it safely. This is the same standard used
+by cryptocurrency wallets. It is the only way to recover your identity
+if all other methods fail. Void cannot recover it for you.
 
 ---
 
