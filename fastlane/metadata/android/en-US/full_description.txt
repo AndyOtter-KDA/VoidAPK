@@ -1,0 +1,15 @@
+Void is a privacy-first encrypted messenger.
+
+No email. No phone number. No cloud accounts. Your identity is created on your device and lives there.
+
+Features:
+- End-to-end encrypted messaging using ECDH + AES-256-GCM
+- Self-destructing messages that vanish after being read
+- Self-destructing notes that can be read once then are destroyed
+- On-device identity — no signup required
+- Transfer your identity to a new device with a 6-digit code
+- Dark cyberpunk theme
+
+Void stores only encrypted data on its servers. Nobody, not even the developer, can read your messages.
+
+Open source. Free forever. No ads. No tracking.
