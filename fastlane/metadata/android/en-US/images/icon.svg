@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Solid pitch-black aesthetic container background -->
+  <rect width="512" height="512" fill="#0A0A0A" />
+  
+  <g stroke="#00F5FF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Neon Outer Halo Glow (Soft Blur) -->
+    <path d="M 160,160 L 256,352 L 352,160" opacity="0.25" stroke-width="38" filter="blur(6px)" />
+    
+    <!-- Sharp Front Core Line of stylized V -->
+    <path d="M 160,160 L 256,352 L 352,160" />
+    
+    <!-- Neon Cyberpunk HUD Accent line underneath V -->
+    <line x1="210" y1="256" x2="302" y2="256" stroke="#00F5FF" stroke-width="6" opacity="0.8" />
+  </g>
+</svg>

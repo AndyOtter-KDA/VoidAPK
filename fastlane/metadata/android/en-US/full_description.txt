@@ -6,9 +6,9 @@ Features:
 - End-to-end encrypted messaging using ECDH + AES-256-GCM
 - Self-destructing messages that vanish after being read
 - Self-destructing notes that can be read once then are destroyed
-- On-device identity — no signup required
-- Transfer your identity to a new device with a 6-digit code
-- Dark cyberpunk theme
+- On-device identity using BIP39 recovery phrases
+- Transfer your identity with a 6-digit code
+- No signup required
 
 Void stores only encrypted data on its servers. Nobody, not even the developer, can read your messages.
 

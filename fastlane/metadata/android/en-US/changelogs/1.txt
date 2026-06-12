@@ -1,0 +1,8 @@
+Initial beta release.
+
+- End-to-end encrypted messaging
+- Self-destructing messages
+- Self-destructing notes
+- BIP39 recovery phrases
+- 6-digit transfer codes
+- No email or phone required
